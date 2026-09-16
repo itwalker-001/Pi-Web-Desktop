@@ -1,0 +1,62 @@
+{
+  "name": "pi-web-desktop",
+  "productName": "Pi Web Desktop",
+  "version": "1.0.2",
+  "description": "pi-web 跨平台桌面端:环境检测、代理配置、版本更新、内嵌 Web UI",
+  "main": "main.js",
+  "homepage": "https://github.com/itwalker-001/Pi-Web-Desktop",
+  "license": "MIT",
+  "author": "pi-web-desktop <pi-web-desktop@example.com>",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win --config.electronDist=node_modules/electron/dist",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux tar.gz"
+  },
+  "devDependencies": {
+    "electron": "^44.3.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.agegr.pi-web-desktop",
+    "productName": "Pi Web Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "webview-preload.js",
+      "lib/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icons/icon-256.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icons/icon-256.png",
+      "category": "Development"
+    }
+  }
+}

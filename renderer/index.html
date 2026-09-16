@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src http://127.0.0.1:* http://localhost:*; connect-src 'self' http://127.0.0.1:* http://localhost:*" />
+  <title>Pi Web Desktop</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="logo">π</span>
+        <span class="name">Pi Web Desktop</span>
+      </div>
+      <div class="topbar-right">
+        <span id="serverChip" class="chip chip-stopped">
+          <span class="dot"></span><span id="serverChipText">服务已停止</span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ 控制台视图 ============ -->
+  <main id="consoleView">
+    <div class="col col-left">
+      <!-- 环境检测 -->
+      <section class="card">
+        <div class="card-head">
+          <h2>环境检测</h2>
+          <button id="redetectBtn" class="btn ghost sm">重新检测</button>
+        </div>
+        <ul class="env-list">
+          <li class="env-item">
+            <span class="env-name"><span class="dot" id="dot-node"></span>Node.js</span>
+            <span class="mono env-status" id="env-node">—</span>
+            <span class="muted env-type">运行时</span>
+          </li>
+          <li class="env-item">
+            <span class="env-name"><span class="dot" id="dot-npm"></span>npm</span>
+            <span class="mono env-status" id="env-npm">—</span>
+            <span class="muted env-type">包管理器</span>
+          </li>
+          <li class="env-item">
+            <span class="env-name"><span class="dot" id="dot-pi"></span>pi</span>
+            <span class="mono env-status" id="env-pi">—</span>
+            <span class="muted env-type">pi CLI</span>
+          </li>
+          <li class="env-item">
+            <span class="env-name"><span class="dot" id="dot-piweb"></span>pi-web <span class="muted">(@agegr/pi-web)</span></span>
+            <span class="mono env-status" id="env-piweb">—</span>
+            <span class="muted env-type" id="env-piweb-extra">全局包</span>
+          </li>
+          <li class="env-item">
+            <span class="env-name"><span class="dot dot-ok"></span>桌面端</span>
+            <span class="mono env-status" id="env-app">—</span>
+            <span class="muted env-type">当前应用</span>
+          </li>
+        </ul>
+        <div class="pi-update">
+          <div class="pu-head">
+            <span class="pu-title">pi 版本 <span class="muted" id="piPkgName"></span></span>
+            <span id="piBadge" class="badge badge-idle">待检测</span>
+          </div>
+          <div class="pu-row">
+            <div class="ver-item">
+              <span class="ver-label">当前版本</span>
+              <span class="mono ver-num" id="piVerInstalled">—</span>
+            </div>
+            <div class="ver-arrow">→</div>
+            <div class="ver-item">
+              <span class="ver-label">最新版本</span>
+              <span class="mono ver-num" id="piVerLatest">—</span>
+            </div>
+            <div class="pu-btns">
+              <button id="piCheckBtn" class="btn ghost sm">检查更新</button>
+              <button id="piUpdateBtn" class="btn primary sm">一键更新</button>
+            </div>
+          </div>
+          <pre id="piUpdateLog" class="log" hidden></pre>
+        </div>
+      </section>
+    </div>
+
+    <div class="col col-right">
+      <!-- 版本 / 更新 -->
+      <section class="card">
+        <div class="card-head">
+          <h2>pi-web 版本 <span class="muted">(@agegr/pi-web)</span></h2>
+          <span id="updateBadge" class="badge badge-idle">待检测</span>
+        </div>
+        <div class="pu-row">
+          <div class="ver-item">
+            <span class="ver-label">当前版本</span>
+            <span class="mono ver-num" id="verInstalled">—</span>
+          </div>
+          <div class="ver-arrow">→</div>
+          <div class="ver-item">
+            <span class="ver-label">最新版本</span>
+            <span class="mono ver-num" id="verLatest">—</span>
+          </div>
+          <div class="pu-btns">
+            <button id="checkBtn" class="btn ghost sm">检查更新</button>
+            <button id="updateBtn" class="btn primary sm">一键更新</button>
+          </div>
+        </div>
+        <pre id="updateLog" class="log" hidden></pre>
+      </section>
+
+      <!-- pi-web 服务 -->
+      <section class="card">
+        <div class="card-head">
+          <h2>pi-web 服务</h2>
+          <span id="serverState" class="muted">已停止</span>
+        </div>
+        <div class="form-row">
+          <label class="field">
+            <span class="field-label">端口</span>
+            <input type="number" id="portInput" min="1024" max="65535" />
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="autoStartChk" />
+            <span>启动应用时自动启动 pi-web</span>
+          </label>
+        </div>
+        <div class="btn-row">
+          <button id="startBtn" class="btn primary">启动服务</button>
+          <button id="stopBtn" class="btn danger" disabled>停止服务</button>
+          <button id="openBrowserBtn" class="btn ghost" disabled>在浏览器打开</button>
+        </div>
+        <details id="serverLogWrap">
+          <summary>服务日志</summary>
+          <pre id="serverLog" class="log"></pre>
+        </details>
+      </section>
+    </div>
+
+    <!-- 代理设置：底部通栏 -->
+    <section class="card card-full">
+      <div class="card-head">
+        <h2>代理设置</h2>
+      </div>
+      <label class="checkbox">
+        <input type="checkbox" id="proxyEnabledChk" />
+        <span>启用网络代理(作用于版本检测、更新及内嵌页面)</span>
+      </label>
+      <div class="form-grid">
+        <label class="field">
+          <span class="field-label">代理地址</span>
+          <input type="text" id="proxyUrlInput" placeholder="http://127.0.0.1:7890(支持 socks5://)" />
+        </label>
+        <label class="field">
+          <span class="field-label">npm Registry(可选,留空使用当前配置)</span>
+          <input type="text" id="registryInput" placeholder="https://registry.npmmirror.com" />
+        </label>
+      </div>
+      <div class="proxy-path" id="proxyPath"></div>
+      <div class="proxy-foot">
+        <span class="muted hint">本地 pi-web 服务(127.0.0.1)始终不走代理。</span>
+        <button id="saveConfigBtn" class="btn primary">保存设置</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ 内嵌 Web 视图 ============ -->
+  <section id="webView" hidden>
+    <div class="webview-bar">
+      <button id="backBtn" class="btn ghost sm">← 控制台</button>
+      <span id="webUrl" class="mono"></span>
+      <button id="newPageBtn" class="btn ghost sm icon-btn" title="在新窗口再开一个页面" aria-label="新窗口">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+          <path d="M12 8v8M8 12h8"></path>
+        </svg>
+        <span>新窗口</span>
+      </button>
+      <button id="refreshBtn" class="btn ghost sm icon-btn" title="刷新页面" aria-label="刷新页面">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        </svg>
+        <span>刷新</span>
+      </button>
+      <button id="openBrowserBtn2" class="btn ghost sm icon-btn" title="在系统默认浏览器中打开" aria-label="在浏览器打开">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
+        </svg>
+        <span>浏览器</span>
+      </button>
+    </div>
+    <webview id="wv" src="about:blank" preload="../webview-preload.js" allowpopups></webview>
+  </section>
+
+  <div id="toastWrap"></div>
+  <script src="app.js"></script>
+</body>
+</html>
