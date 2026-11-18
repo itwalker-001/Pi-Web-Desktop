@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src http://127.0.0.1:* http://localhost:*; connect-src 'self' http://127.0.0.1:* http://localhost:*" />
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; frame-src http: https:; connect-src 'self' http: https:" />
   <title>Pi Web Desktop</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -11,8 +11,9 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <span class="logo">π</span>
+        <img class="logo" src="../build/pi-icon.svg" alt="Pi" />
         <span class="name">Pi Web Desktop</span>
+        <span id="appVersion" class="muted" title="桌面端版本">—</span>
       </div>
       <div class="topbar-right">
         <span id="serverChip" class="chip chip-stopped">
@@ -22,14 +23,93 @@
     </div>
   </header>
 
+  <!-- ============ 目标切换条(顶层:所有功能模块跟随) ============ -->
+  <div class="scope-bar">
+    <span class="scope-label">目标</span>
+    <div class="svc-tabs" id="svcTabs"></div>
+    <button id="proxyToggleBtn" class="svc-icon proxy" title="启用代理" aria-label="启用代理">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path>
+                <path class="proxy-check" d="m9 12 2 2 4-4" style="display:none"></path>
+              </svg>
+            </button>
+  </div>
+
   <!-- ============ 控制台视图 ============ -->
   <main id="consoleView">
     <div class="col col-left">
-      <!-- 环境检测 -->
+      <!-- 系统服务:本机 / 各远程(机器名)Tab,每个 Tab 一个服务地址 -->
       <section class="card">
         <div class="card-head">
-          <h2>环境检测</h2>
-          <button id="redetectBtn" class="btn ghost sm">重新检测</button>
+          <h2>系统服务 <span class="muted" id="serverScope"></span></h2>
+          <span id="serverState" class="muted">已停止</span>
+        </div>
+        <div class="svc-panel">
+          <div class="form-row">
+            <label class="field">
+              <span class="field-label">主机</span>
+              <input type="text" id="svcHost" disabled />
+            </label>
+            <label class="field" id="localPortField">
+              <span class="field-label">端口</span>
+              <input type="number" id="portInput" min="1024" max="65535" />
+            </label>
+            <label class="field" id="remotePortField" hidden>
+              <span class="field-label">端口(webview 直连,需防火墙放行)</span>
+              <input type="number" id="remoteSrvPortInput" min="1024" max="65535" />
+            </label>
+          </div>
+          <div class="btn-row svc-actions">
+            <button id="startBtn" class="svc-icon primary" title="启动服务" aria-label="启动服务">
+              <svg class="ic-play" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <polygon points="6 3 20 12 6 21 6 3"></polygon>
+              </svg>
+              <svg class="ic-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+            </button>
+            <button id="stopBtn" class="svc-icon danger" title="停止服务" aria-label="停止服务" disabled>
+              <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+              </svg>
+            </button>
+            <button id="openBrowserBtn" class="svc-icon" title="在系统浏览器打开" aria-label="在系统浏览器打开" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+            </button>
+            <button id="btnDefault" class="svc-icon star" title="设为应用启动默认" aria-label="设为应用启动默认">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+            </button>
+            <button id="svcLogBtn" class="svc-icon" title="服务日志" aria-label="查看服务日志">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="col col-right">
+      <!-- 环境检测:pi / pi-web 的检查更新内联在行上 -->
+      <section class="card">
+        <div class="card-head">
+          <h2>环境检测 <span class="muted" id="envScope"></span></h2>
+          <div class="card-actions">
+            <button id="updateLogBtn" class="btn ghost sm">更新日志</button>
+            <button id="redetectBtn" class="btn ghost sm">重新检测</button>
+          </div>
         </div>
         <ul class="env-list">
           <li class="env-item">
@@ -44,95 +124,31 @@
           </li>
           <li class="env-item">
             <span class="env-name"><span class="dot" id="dot-pi"></span>pi</span>
-            <span class="mono env-status" id="env-pi">—</span>
+            <span class="env-status-wrap">
+              <span class="mono env-status" id="env-pi" title="">—</span>
+              <button id="piUpdateBtn" class="env-act-icon" title="一键更新" aria-label="一键更新 pi">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </span>
             <span class="muted env-type">pi CLI</span>
           </li>
           <li class="env-item">
             <span class="env-name"><span class="dot" id="dot-piweb"></span>pi-web <span class="muted">(@agegr/pi-web)</span></span>
-            <span class="mono env-status" id="env-piweb">—</span>
+            <span class="env-status-wrap">
+              <span class="mono env-status" id="env-piweb">—</span>
+              <button id="updateBtn" class="env-act-icon" title="一键更新" aria-label="一键更新 pi-web">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </span>
             <span class="muted env-type" id="env-piweb-extra">全局包</span>
           </li>
-          <li class="env-item">
-            <span class="env-name"><span class="dot dot-ok"></span>桌面端</span>
-            <span class="mono env-status" id="env-app">—</span>
-            <span class="muted env-type">当前应用</span>
-          </li>
         </ul>
-        <div class="pi-update">
-          <div class="pu-head">
-            <span class="pu-title">pi 版本 <span class="muted" id="piPkgName"></span></span>
-            <span id="piBadge" class="badge badge-idle">待检测</span>
-          </div>
-          <div class="pu-row">
-            <div class="ver-item">
-              <span class="ver-label">当前版本</span>
-              <span class="mono ver-num" id="piVerInstalled">—</span>
-            </div>
-            <div class="ver-arrow">→</div>
-            <div class="ver-item">
-              <span class="ver-label">最新版本</span>
-              <span class="mono ver-num" id="piVerLatest">—</span>
-            </div>
-            <div class="pu-btns">
-              <button id="piCheckBtn" class="btn ghost sm">检查更新</button>
-              <button id="piUpdateBtn" class="btn primary sm">一键更新</button>
-            </div>
-          </div>
-          <pre id="piUpdateLog" class="log" hidden></pre>
-        </div>
-      </section>
-    </div>
-
-    <div class="col col-right">
-      <!-- 版本 / 更新 -->
-      <section class="card">
-        <div class="card-head">
-          <h2>pi-web 版本 <span class="muted">(@agegr/pi-web)</span></h2>
-          <span id="updateBadge" class="badge badge-idle">待检测</span>
-        </div>
-        <div class="pu-row">
-          <div class="ver-item">
-            <span class="ver-label">当前版本</span>
-            <span class="mono ver-num" id="verInstalled">—</span>
-          </div>
-          <div class="ver-arrow">→</div>
-          <div class="ver-item">
-            <span class="ver-label">最新版本</span>
-            <span class="mono ver-num" id="verLatest">—</span>
-          </div>
-          <div class="pu-btns">
-            <button id="checkBtn" class="btn ghost sm">检查更新</button>
-            <button id="updateBtn" class="btn primary sm">一键更新</button>
-          </div>
-        </div>
-        <pre id="updateLog" class="log" hidden></pre>
-      </section>
-
-      <!-- pi-web 服务 -->
-      <section class="card">
-        <div class="card-head">
-          <h2>pi-web 服务</h2>
-          <span id="serverState" class="muted">已停止</span>
-        </div>
-        <div class="form-row">
-          <label class="field">
-            <span class="field-label">端口</span>
-            <input type="number" id="portInput" min="1024" max="65535" />
-          </label>
-          <label class="checkbox">
-            <input type="checkbox" id="autoStartChk" />
-            <span>启动应用时自动启动 pi-web</span>
-          </label>
-        </div>
-        <div class="btn-row">
-          <button id="startBtn" class="btn primary">启动服务</button>
-          <button id="stopBtn" class="btn danger" disabled>停止服务</button>
-          <button id="openBrowserBtn" class="btn ghost" disabled>在浏览器打开</button>
-        </div>
-        <details id="serverLogWrap">
-          <summary>服务日志</summary>
-          <pre id="serverLog" class="log"></pre>
-        </details>
       </section>
     </div>
 
@@ -141,27 +157,111 @@
       <div class="card-head">
         <h2>代理设置</h2>
       </div>
-      <label class="checkbox">
-        <input type="checkbox" id="proxyEnabledChk" />
-        <span>启用网络代理(作用于版本检测、更新及内嵌页面)</span>
-      </label>
-      <div class="form-grid">
+      <div class="form-grid proxy-table">
         <label class="field">
-          <span class="field-label">代理地址</span>
-          <input type="text" id="proxyUrlInput" placeholder="http://127.0.0.1:7890(支持 socks5://)" />
+          <span class="field-label">代理协议</span>
+          <select id="proxyProtoSelect">
+            <option value="http">HTTP / HTTPS</option>
+            <option value="socks5">SOCKS5</option>
+            <option value="socks4">SOCKS4</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">代理服务器</span>
+          <input type="text" id="proxyHostInput" placeholder="172.21.170.62" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span class="field-label">代理端口</span>
+          <input type="number" id="proxyPortInput" placeholder="10808" min="1" max="65535" />
         </label>
         <label class="field">
           <span class="field-label">npm Registry(可选,留空使用当前配置)</span>
           <input type="text" id="registryInput" placeholder="https://registry.npmmirror.com" />
         </label>
       </div>
-      <div class="proxy-path" id="proxyPath"></div>
+      <label class="field proxy-bypass">
+        <span class="field-label">不代理的地址列表(每行一条,支持通配符与网段)</span>
+        <textarea id="proxyBypassInput" rows="4" spellcheck="false" placeholder="192.168.0.0/16&#10;172.16.0.0/12&#10;10.0.0.0/8&#10;*.internal.example.com"></textarea>
+      </label>
       <div class="proxy-foot">
-        <span class="muted hint">本地 pi-web 服务(127.0.0.1)始终不走代理。</span>
+        <span class="muted hint">此处仅保存配置;启用/关闭请使用「系统服务」中的代理开关。本地 pi-web 服务(127.0.0.1)始终不走代理。</span>
         <button id="saveConfigBtn" class="btn primary">保存设置</button>
       </div>
     </section>
   </main>
+
+  <!-- ============ 远程服务器管理(弹窗) ============ -->
+  <div id="remoteModal" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <div class="card-head">
+        <h2>远程服务器 <span class="muted">SSH 连接 · 多服务器管理</span></h2>
+        <div class="card-actions">
+          <span id="remoteConnBadge" class="badge badge-idle" title="">未测试</span>
+          <button id="modalCloseBtn" class="btn ghost sm">关闭</button>
+        </div>
+      </div>
+      <div class="form-row remote-picker-row">
+        <label class="field" style="flex:1">
+          <span class="field-label">服务器(按 IP 管理,可创建多台,各自独立运行)</span>
+          <div class="remote-picker">
+            <select id="remoteSelect"></select>
+            <button id="remoteAddBtn" class="btn ghost sm" title="新增一台远程服务器">新增</button>
+            <button id="remoteDelBtn" class="btn danger sm" title="删除当前选中的服务器档案">删除</button>
+          </div>
+        </label>
+      </div>
+      <div class="form-grid">
+        <label class="field">
+          <span class="field-label">主机</span>
+          <input type="text" id="remoteHostInput" placeholder="192.168.1.100 或主机名" />
+        </label>
+        <label class="field">
+          <span class="field-label">SSH 端口</span>
+          <input type="number" id="remoteSshPortInput" min="1" max="65535" placeholder="22" />
+        </label>
+        <label class="field">
+          <span class="field-label">用户名</span>
+          <input type="text" id="remoteUserInput" placeholder="root" />
+        </label>
+        <label class="field">
+          <span class="field-label">认证方式</span>
+          <select id="remoteAuthSelect">
+            <option value="key">私钥(免密 passphrase)</option>
+            <option value="password">用户名密码</option>
+          </select>
+        </label>
+        <label class="field" id="remoteKeyField">
+          <span class="field-label">私钥路径(可选,默认 ~/.ssh/id_rsa)</span>
+          <input type="text" id="remoteKeyInput" placeholder="~/.ssh/id_rsa" />
+        </label>
+        <label class="field" id="remotePasswordField" hidden>
+          <span class="field-label">密码(明文保存在本机配置文件)</span>
+          <input type="password" id="remotePasswordInput" placeholder="SSH 登录密码" autocomplete="off" />
+        </label>
+      </div>
+      <div class="proxy-foot">
+        <span class="muted hint">SSH 仅作管理通道(检测/安装/启停);服务页直接访问 http://主机:端口。支持私钥或密码认证;首次连接记录主机指纹(TOFU)。</span>
+        <div class="btn-row" style="margin:0">
+          <button id="remoteTestBtn" class="btn ghost sm">测试连接</button>
+          <button id="remoteSaveBtn" class="btn primary sm">保存远程配置</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 日志弹窗 ============ -->
+  <div id="logModal" class="modal-overlay" hidden>
+    <div class="modal-card log-modal">
+      <div class="card-head">
+        <h2 id="logModalTitle">日志</h2>
+        <div class="card-actions">
+          <button id="logCopyBtn" class="btn ghost sm">复制</button>
+          <button id="logCloseBtn" class="btn ghost sm">关闭</button>
+        </div>
+      </div>
+      <pre id="logModalContent" class="log log-modal-content"></pre>
+    </div>
+  </div>
 
   <!-- ============ 内嵌 Web 视图 ============ -->
   <section id="webView" hidden>

@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('piApi', {
   serverStart: () => ipcRenderer.invoke('server:start'),
   serverStop: () => ipcRenderer.invoke('server:stop'),
   serverState: () => ipcRenderer.invoke('server:state'),
+  remoteTest: () => ipcRenderer.invoke('remote:test'),
   openExternal: (url) => ipcRenderer.invoke('shell:open', url),
   openPage: (url) => ipcRenderer.invoke('page:open', url),
 

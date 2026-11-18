@@ -80,6 +80,9 @@ const fs = require('fs');
 })();
 const config = require('./lib/config');
 const server = require('./lib/server');
+const remote = require('./lib/remote');
+const remoteServer = require('./lib/remote-server');
+const proxy = require('./lib/proxy');
 const { register: registerIpc } = require('./lib/ipc');
 const { detect, latestVersion } = require('./lib/env');
 const { attachWebContentsHooks } = require('./lib/webview-files');
@@ -92,13 +95,10 @@ if (!gotLock) {
 }
 
 // 内嵌浏览器(webview)与主窗口共用默认 session,统一应用代理
+// 代理规则由 lib/proxy.js 统一产出(分协议表 + 不代理列表)
 async function applySessionProxy(cfg) {
   try {
-    if (cfg.proxy && cfg.proxy.enabled && cfg.proxy.url) {
-      await session.defaultSession.setProxy({ proxyRules: cfg.proxy.url.trim() });
-    } else {
-      await session.defaultSession.setProxy({ mode: 'system' });
-    }
+    await session.defaultSession.setProxy(proxy.sessionConfig(cfg));
   } catch {}
 }
 
@@ -168,7 +168,27 @@ app.on('web-contents-created', (_e, contents) => {
   });
 });
 
+// 应用启动模式(默认设置):按用户选择进入本地或指定远程,而不是跟随上次
+function applyStartupMode() {
+  try {
+    const cfg = config.get();
+    if (cfg.defaultMode === 'local' && cfg.mode !== 'local') {
+      config.save({ mode: 'local' });
+    } else if (cfg.defaultMode === 'remote' && cfg.mode !== 'remote') {
+      config.save({ mode: 'remote' });
+    }
+    if (cfg.defaultMode === 'remote' && cfg.defaultRemoteId) {
+      const cur = config.get();
+      const exists = (cur.remotes || []).some((r) => r.id === cfg.defaultRemoteId);
+      if (exists && cur.activeRemoteId !== cfg.defaultRemoteId) {
+        config.save({ activeRemoteId: cfg.defaultRemoteId });
+      }
+    }
+  } catch {}
+}
+
 app.whenReady().then(async () => {
+  applyStartupMode();
   await applySessionProxy(config.get());
   registerIpc({
     getWindow: () => mainWindow,
@@ -209,5 +229,8 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   server.stop();
-  app.quit();
+  remoteServer.stopAll().finally(() => {
+    remote.disconnect();
+    app.quit();
+  });
 });
