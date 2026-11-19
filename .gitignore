@@ -1,5 +1,5 @@
 node_modules/
-dist/
+dist*/
 *.log
 .remote-build/
 test/ps-probe.out.txt

@@ -1,4 +1,10 @@
-# Pi Web Desktop v1.1.1 发布说明
+# Pi Web Desktop v1.1.2 发布说明
+
+## 🆕 v1.1.2 修复
+
+- **修复打包版顶栏 logo 破图**:`build/` 资源目录(含 pi-icon.svg)此前未打入安装包,导致打包后顶栏图标显示裂图占位符;现已随包分发(dev 与打包版表现一致)
+
+## 🆕 v1.1.1 修复
 
 ## 🆕 v1.1.1 修复
 
@@ -52,13 +58,13 @@
 
 | 文件 | 平台 | 说明 |
 |---|---|---|
-| `Pi Web Desktop Setup 1.1.1.exe` | Windows x64 | 安装版(NSIS,可选目录) |
-| `Pi Web Desktop 1.1.1.exe` | Windows x64 | 便携版,免安装 |
+| `Pi Web Desktop Setup 1.1.2.exe` | Windows x64 | 安装版(NSIS,可选目录) |
+| `Pi Web Desktop 1.1.2.exe` | Windows x64 | 便携版,免安装 |
 | `pi-web-desktop_1.1.0_amd64.deb` | Linux amd64 | Debian / Ubuntu 安装包 |
 
 ## 📖 安装与升级
 
-**Windows**:关闭正在运行的旧版本后运行 `Setup 1.1.1.exe`;便携版直接双击。首次运行如提示 SmartScreen,选择「仍要运行」(应用未做代码签名)。
+**Windows**:关闭正在运行的旧版本后运行 `Setup 1.1.2.exe`;便携版直接双击。首次运行如提示 SmartScreen,选择「仍要运行」(应用未做代码签名)。
 
 **Linux**:
 
