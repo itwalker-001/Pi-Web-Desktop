@@ -439,10 +439,14 @@ function setServerPolling() {
   if (!(srv.running && srv.external)) return;
   const mode = state.mode;
   const remoteId = state.activeRemoteId;
+  let pollFails = 0;
   externalPollTimer = setInterval(async () => {
     try {
       await fetch(srv.url, { mode: 'no-cors', cache: 'no-store' });
+      pollFails = 0;
     } catch {
+      pollFails += 1;
+      if (pollFails < 3) return; // 连续 3 次(≈15s)才判定消失,过滤瞬时抖动
       clearInterval(externalPollTimer);
       externalPollTimer = null;
       if (mode === 'local') state.servers.local = defaultServer();
@@ -459,9 +463,18 @@ async function startServer() {
     toast('未检测到 pi-web,请先安装或更新', 'err');
     return;
   }
-  // 已在运行(含外部实例):直接切到服务页
+  // 已在运行(含外部实例):先探活再进服务页(远程已无看门狗,按需检测代替)
   if (curServer().running) {
-    showWeb(curServer().url);
+    const url = curServer().url;
+    try {
+      await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(4000) });
+    } catch {
+      setServer(defaultServer());
+      renderServer();
+      toast('服务已停止或不可达,请重新启动', 'err');
+      return;
+    }
+    showWeb(url);
     return;
   }
   const startBtn = $('startBtn');
@@ -948,6 +961,7 @@ function bindEvents() {
   });
 
   window.piApi.onServerExited((info) => {
+    console.warn('[pi] server:exited', JSON.stringify(info));
     const isRemote = info && info.mode === 'remote';
     const isCurrent = isRemote
       ? state.mode === 'remote' && (info.remoteId || '') === state.activeRemoteId

@@ -1,4 +1,15 @@
-# Pi Web Desktop v1.1.0 发布说明
+# Pi Web Desktop v1.1.1 发布说明
+
+## 🆕 v1.1.1 修复
+
+- **移除远程看门狗**:不再周期性探测远程端口判定退出 —— 修复「远程启动后 webview 被自动踢回配置页」;服务死活改为按需检测(点「打开服务页」时探活,死了才复位提示)
+- **SSH 管理连接断开不再踢出**:服务在远程多半仍在运行(直连页面不受影响),状态转外部实例态,下次操作自动重连
+- **外部实例轮询容错**:连续 3 次失败(≈15s)才判定消失,单次网络抖动不误判
+- **远程命令兼容性**:改用 `bash -ilc`(交互+登录)执行,确保写在 ~/.bashrc 且带非交互守卫的 nvm 等 PATH 生效;过滤无 tty 下的 bash 固定告警噪音
+- **修复远程 pi-web 版本检测分支误判**(node 检测通过仍走失败分支)
+- 服务退出事件携带原因日志(主进程/渲染层),便于定位
+
+## 🆕 v1.1.0 新增
 
 > `@agegr/pi-web` 的跨平台桌面端:环境检测、代理配置、pi/pi-web 一键安装与更新、多窗口内嵌 Web UI、本地/远程双模式。
 
@@ -41,13 +52,13 @@
 
 | 文件 | 平台 | 说明 |
 |---|---|---|
-| `Pi Web Desktop Setup 1.1.0.exe` | Windows x64 | 安装版(NSIS,可选目录) |
-| `Pi Web Desktop 1.1.0.exe` | Windows x64 | 便携版,免安装 |
+| `Pi Web Desktop Setup 1.1.1.exe` | Windows x64 | 安装版(NSIS,可选目录) |
+| `Pi Web Desktop 1.1.1.exe` | Windows x64 | 便携版,免安装 |
 | `pi-web-desktop_1.1.0_amd64.deb` | Linux amd64 | Debian / Ubuntu 安装包 |
 
 ## 📖 安装与升级
 
-**Windows**:关闭正在运行的旧版本后运行 `Setup 1.1.0.exe`;便携版直接双击。首次运行如提示 SmartScreen,选择「仍要运行」(应用未做代码签名)。
+**Windows**:关闭正在运行的旧版本后运行 `Setup 1.1.1.exe`;便携版直接双击。首次运行如提示 SmartScreen,选择「仍要运行」(应用未做代码签名)。
 
 **Linux**:
 
