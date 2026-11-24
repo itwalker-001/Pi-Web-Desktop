@@ -1,4 +1,6 @@
-// 一次性:创建 GitHub Release + 上传安装包产物(走指定代理)。发版时改 TAG/ASSETS/正文标记后运行。
+// 创建 GitHub Release + 上传安装包产物(走指定代理)。版本号取自 package.json,发版时无需改本文件:
+// tag = 版本号(历史 tag 无 v 前缀),产物名 = `Pi Web Desktop[ Setup] <版本>.exe`,
+// Release 正文 = RELEASE.md 里「## 🆕 v<版本>」那一段(到下一个二级标题为止)。运行:node scripts/release-publish.js
 'use strict';
 const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
@@ -7,11 +9,12 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const REPO = 'itwalker-001/Pi-Web-Desktop';
-const TAG = '1.1.3';
+const VERSION = require('../package.json').version;
+const TAG = VERSION;
 const PROXY = 'http://172.21.170.62:10808';
-const ASSETS = ['Pi Web Desktop Setup 1.1.3.exe', 'Pi Web Desktop 1.1.3.exe'];
+const ASSETS = [`Pi Web Desktop Setup ${VERSION}.exe`, `Pi Web Desktop ${VERSION}.exe`];
 
-function log(m) { console.log(new Date().toLocaleTimeString(), m); }
+function log(...m) { console.log(new Date().toLocaleTimeString(), ...m); }
 
 function token() {
   const r = spawnSync('git', ['credential', 'fill'], {
@@ -50,11 +53,14 @@ function api(url, method, tok, body, file) {
   try { return JSON.parse(bodyText || '{}'); } catch { return { raw: bodyText.slice(0, 300), http: code }; }
 }
 
+// Release 正文:RELEASE.md 里「## 🆕 v<版本>」那一段,到下一个二级标题(下一个版本的段落)为止
 function releaseBody() {
   const md = fs.readFileSync(path.join(ROOT, 'RELEASE.md'), 'utf8');
-  const start = md.indexOf('## 🆕 v1.1.3 修复');
-  const end = md.indexOf('## 🆕 v1.1.2 修复');
-  return start >= 0 ? md.slice(start, end > start ? end : undefined).trim() : md.slice(0, 2000);
+  const start = md.indexOf(`## 🆕 v${VERSION}`);
+  if (start < 0) throw new Error(`RELEASE.md 里没有「## 🆕 v${VERSION}」段落`);
+  const rest = md.slice(start);
+  const next = rest.match(/\n## (?!#)/); // 下一个二级标题(### 小节不算;本段首行不以 \n 开头,不会自匹配)
+  return (next ? rest.slice(0, next.index) : rest).trim();
 }
 
 (async () => {
