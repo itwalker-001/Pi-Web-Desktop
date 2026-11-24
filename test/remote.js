@@ -96,7 +96,7 @@ async function main() {
 
   // 7. 停止 + 远程进程回收
   console.log('[7] 停止远程服务…');
-  const stopRes = await remoteServer.stop();
+  const stopRes = await remoteServer.stop(cfg);
   console.log('    stop:', JSON.stringify(stopRes));
   await sleep(1500);
   const stillServing = await remoteServer.probeRemote(cfg).catch(() => 'ERR');

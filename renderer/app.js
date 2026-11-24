@@ -488,6 +488,7 @@ async function startServer() {
     setServer({ running: true, owned: !res.external, external: !!res.external, url: res.url });
     renderServer();
     if (res.external) toast('检测到端口已占用,已连接到正在运行的 pi-web');
+    else if (res.adopted) toast('端口上的 pi-web 是本应用上次启动的,已重新接管,可直接停止或更新', 'ok');
     showWeb(res.url);
   } else {
     toast(`启动失败:${res.error}`, 'err');
@@ -496,10 +497,30 @@ async function startServer() {
   }
 }
 
+// 外部实例不代停:把「原处」落到具体的主机与端口上,免得不知道该去哪儿停
+function externalStopHint() {
+  const r = (state.mode === 'remote' && activeRemote()) || {};
+  const port = state.mode === 'remote' ? r.remotePort || 30141 : (state.cfg && state.cfg.port) || 30141;
+  const where = state.mode === 'remote'
+    ? `远程 ${[r.user, r.host].filter(Boolean).join('@') || '?'} 端口 ${port}`
+    : `本机端口 ${port}`;
+  return `${where} 上的 pi-web 不是本应用启动的,本应用不会代停;请在启动它的地方手动停止`;
+}
+
 async function stopServer() {
-  const res = await window.piApi.serverStop();
+  let res = await window.piApi.serverStop();
+  // 外部实例(远程):弹原生确认框,用户知情后强制结束;本地保持提示语义(不代停)
+  if (res.external && state.mode === 'remote') {
+    const c = await window.piApi.confirmForceStop().catch(() => null);
+    if (!c || !c.confirmed) return;
+    res = await window.piApi.serverStop({ force: true });
+  }
   if (res.external) {
-    toast('该 pi-web 由外部启动,本应用无法停止;请先在原处停止它', 'err');
+    toast(externalStopHint(), 'err');
+    return;
+  }
+  if (res.error) {
+    toast(res.error, 'err'); // 服务多半还在运行:保持运行态,不能当成已停止
     return;
   }
   setServer(defaultServer());
@@ -844,7 +865,12 @@ async function saveRemotePort() {
 
 async function restartAfterPortChange() {
   toast('端口已变更,正在重启服务…');
-  await window.piApi.serverStop();
+  const stopped = await window.piApi.serverStop();
+  if (stopped.error) {
+    toast(stopped.error, 'err'); // 旧端口上的实例没停掉,不再叠启一个新实例
+    renderServer();
+    return;
+  }
   const res = await window.piApi.serverStart();
   if (res.ok) {
     setServer({ running: true, owned: !res.external, external: !!res.external, url: res.url });
