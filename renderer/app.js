@@ -5,19 +5,19 @@ const $ = (id) => document.getElementById(id);
 // 本地与多台远程服务可同时运行:远程按档案(id)各自维护状态与日志,
 // state.mode 决定本地/远程,state.activeRemoteId 决定当前操作的远程档案
 const defaultServer = () => ({ running: false, owned: true, external: false, url: '' });
+const emptyEnvState = () => ({ env: null, update: { installed: null, latest: null, outdated: false }, piUpdate: null });
 
 const state = {
   cfg: null,
   mode: 'local',
   activeRemoteId: '',
   remotes: [],
-  env: null,
-  update: { installed: null, latest: null, outdated: false },
-  piUpdate: null, // checkUpdate 返回的 pi 包信息
+  // 环境检测结果与版本信息:本机一份、每个远程档案一份(各服务器逐个检测、逐个归档,互不串台)
+  envs: { local: { identity: '', ...emptyEnvState() }, remotes: {} },
+  appVersion: '',
   servers: { local: defaultServer(), remotes: {} },
   logs: { local: '', remotes: {} },
   updating: false,
-  detecting: false,
   updateLog: '',
 };
 
@@ -75,27 +75,133 @@ function setDot(id, status) {
 
 /* ---------------- 环境检测 ---------------- */
 
-async function detectEnv({ silent = false } = {}) {
-  if (state.detecting) return;
-  state.detecting = true;
-  $('redetectBtn').disabled = true;
-  for (const id of ['env-node', 'env-npm', 'env-pi', 'env-piweb']) $(id).textContent = '检测中…';
+// 每个目标的检测结果各存一份。远程档案带「连接身份」(主机|SSH 端口|用户|私钥):检测始终对应当前
+// 真正配置的那台服务器 —— 档案被改成别的服务器后,旧服务器的结果即作废
+function remoteIdentity(r) {
+  return r ? `${r.host}|${r.port}|${r.user}|${r.keyPath}` : '';
+}
 
-  const res = await window.piApi.detectEnv();
-  if (res.ok) {
-    state.env = res.env;
-    renderEnv(res.env, res.appVersion);
-  } else {
-    state.env = null;
-    for (const id of ['env-node', 'env-npm', 'env-pi', 'env-piweb']) {
-      $(id).textContent = '—';
-      setDot(`dot-${id.replace('env-', '')}`, 'bad');
-    }
-    toast(`环境检测失败:${res.error}`, 'err');
+// 某个目标此刻的标识
+function targetInfo(mode, remoteId) {
+  if (mode !== 'remote') return { mode: 'local', remoteId: '', identity: '' };
+  return { mode: 'remote', remoteId, identity: remoteIdentity(state.remotes.find((x) => x.id === remoteId) || null) };
+}
+
+function curTarget() {
+  return targetInfo(state.mode, state.activeRemoteId);
+}
+
+function keyOf(t) {
+  return t.mode === 'remote' ? t.remoteId : 'local';
+}
+
+function isCurrent(t) {
+  return keyOf(t) === currentTargetId();
+}
+
+function envSlot(t) {
+  if (t.mode !== 'remote') return state.envs.local;
+  let slot = state.envs.remotes[t.remoteId];
+  if (!slot || slot.identity !== t.identity) {
+    slot = { identity: t.identity, ...emptyEnvState() };
+    state.envs.remotes[t.remoteId] = slot;
   }
-  state.detecting = false;
-  $('redetectBtn').disabled = false;
-  if (!silent && !res.ok) return;
+  return slot;
+}
+
+// 当前目标的环境检测结果(档案身份变了会自动作废)
+function curEnv() {
+  return envSlot(curTarget());
+}
+
+// 在途请求与序号:各目标的检测互不阻塞;同一目标先后发出的请求,只有最后一个的结果会被采用。
+// 在途请求连身份一起记:检测途中档案被改成别的服务器时,新服务器的检测是另一个请求,不能并入旧的那个
+const detectInflight = new Map();
+const updateInflight = new Map();
+const latestSeq = { detect: {}, update: {} };
+
+function pendingOf(map, t) {
+  const p = map.get(keyOf(t));
+  return p && p.identity === t.identity ? p.promise : null;
+}
+
+function setPending(map, t, promise) {
+  map.set(keyOf(t), { identity: t.identity, promise });
+}
+
+function clearPending(map, t, promise) {
+  const p = map.get(keyOf(t));
+  if (p && p.promise === promise) map.delete(keyOf(t));
+}
+
+// 环境检测:按发起时的目标发起、按目标归档。切走后才到达的响应只存不画 —— 不会把 A 的版本号画到
+// B 的页面上,也不会因为 A 还在检测就跳过 B。fresh:绕开在途请求强制重新检测(一键更新之后用)
+function detectEnv({ silent = false, fresh = false } = {}) {
+  const target = curTarget();
+  const key = keyOf(target);
+  const pending = pendingOf(detectInflight, target);
+  if (pending && !fresh) return pending;
+  const seq = (latestSeq.detect[key] = (latestSeq.detect[key] || 0) + 1);
+
+  if (isCurrent(target)) {
+    $('redetectBtn').disabled = true;
+    // 已有该目标上次的结果:后台静默刷新,不闪「检测中…」
+    if (!envSlot(target).env) {
+      for (const id of ['env-node', 'env-npm', 'env-pi', 'env-piweb']) $(id).textContent = '检测中…';
+    }
+  }
+
+  const p = window.piApi.detectEnv(target)
+    .catch((err) => ({ ok: false, error: String((err && err.message) || err), identity: target.identity }))
+    .then((res) => {
+      // 检测期间档案被改成了别的服务器:这是旧服务器的结果,作废
+      const stale = res.identity !== targetInfo(target.mode, target.remoteId).identity;
+      if (!stale && seq === latestSeq.detect[key]) {
+        const slot = envSlot(target);
+        slot.env = res.ok ? res.env : null;
+        if (res.ok && res.appVersion) state.appVersion = res.appVersion;
+        if (isCurrent(target)) {
+          if (res.ok) {
+            renderEnv(res.env, state.appVersion);
+          } else {
+            for (const id of ['env-node', 'env-npm', 'env-pi', 'env-piweb']) {
+              $(id).textContent = '—';
+              setDot(`dot-${id.replace('env-', '')}`, 'bad');
+            }
+            toast(`环境检测失败:${res.error}`, 'err');
+          }
+        }
+      }
+      return res;
+    })
+    .finally(() => {
+      clearPending(detectInflight, target, p);
+      if (!pendingOf(detectInflight, curTarget())) $('redetectBtn').disabled = false;
+    });
+  setPending(detectInflight, target, p);
+  return p;
+}
+
+// 尚无结果:四项显示「—」,绝不沿用上一个目标的数值
+function renderEnvUnknown() {
+  for (const id of ['env-node', 'env-npm', 'env-pi', 'env-piweb']) {
+    $(id).textContent = '—';
+    setDot(`dot-${id.replace('env-', '')}`, '');
+  }
+  $('env-pi').title = '';
+  $('env-piweb-extra').textContent = '—';
+  $('env-piweb-extra').title = '';
+  $('updateBtn').hidden = true;
+  $('piUpdateBtn').hidden = true;
+  $('appVersion').textContent = state.appVersion ? `v${state.appVersion}` : '—';
+}
+
+// 画出当前目标已归档的检测结果(切 Tab 时立即显示该目标自己的上次结果,随后后台刷新)
+function renderEnvState() {
+  const slot = curEnv();
+  if (slot.env) renderEnv(slot.env, state.appVersion);
+  else renderEnvUnknown();
+  if (slot.env || slot.update.installed !== null || slot.piUpdate) renderUpdate();
 }
 
 function renderEnv(env, appVersion) {
@@ -118,8 +224,9 @@ function renderEnv(env, appVersion) {
 /* ---------------- 版本检测 / 更新(内联在 pi / pi-web 行) ---------------- */
 
 function renderUpdate() {
-  const { installed, latest, outdated } = state.update;
-  const pi = state.piUpdate;
+  const { update, piUpdate } = curEnv();
+  const pi = piUpdate;
+  const { installed, latest, outdated } = update;
 
   // pi-web 行:有更新或未安装才显示更新图标
   setDot('dot-piweb', outdated ? 'warn' : installed ? 'ok' : 'bad');
@@ -148,16 +255,37 @@ function renderUpdate() {
   pb.title = hasPi ? (!pi.installed ? '一键安装' : piOutdated ? `一键更新 → v${pi.latest}` : '') : '未检测到 pi';
 }
 
-async function checkUpdate({ silent = false } = {}) {
-  const res = await window.piApi.checkUpdate();
-  state.update = { installed: res.installed, latest: res.latest, outdated: !!res.outdated };
-  state.piUpdate = res.pi || null;
-  if (res.env) renderEnv(res.env, res.appVersion);
-  renderUpdate();
-  if (!res.ok) {
-    if (!silent) toast(`检查更新失败:${res.error || '未知错误'}`, 'err');
-  }
-  return res;
+// 版本检测:同样按目标发起、归档 —— 已装版本是那台服务器自己的,最新版也在那台服务器上查
+function checkUpdate({ silent = false, fresh = false } = {}) {
+  const target = curTarget();
+  const key = keyOf(target);
+  const pending = pendingOf(updateInflight, target);
+  if (pending && !fresh) return pending;
+  const seq = (latestSeq.update[key] = (latestSeq.update[key] || 0) + 1);
+
+  const p = window.piApi.checkUpdate(target)
+    .catch((err) => ({
+      ok: false, installed: null, latest: null, outdated: false, pi: null,
+      error: String((err && err.message) || err), identity: target.identity,
+    }))
+    .then((res) => {
+      const stale = res.identity !== targetInfo(target.mode, target.remoteId).identity;
+      if (!stale && seq === latestSeq.update[key]) {
+        const slot = envSlot(target);
+        slot.update = { installed: res.installed, latest: res.latest, outdated: !!res.outdated };
+        slot.piUpdate = res.pi || null;
+        if (isCurrent(target)) {
+          renderUpdate();
+          if (!res.ok && !silent) toast(`检查更新失败:${res.error || '未知错误'}`, 'err');
+        }
+      }
+      return res;
+    })
+    .finally(() => {
+      clearPending(updateInflight, target, p);
+    });
+  setPending(updateInflight, target, p);
+  return p;
 }
 
 async function runUpdate(target = 'pi-web') {
@@ -165,9 +293,7 @@ async function runUpdate(target = 'pi-web') {
   state.updating = true;
   const isPi = target === 'pi';
   const btn = isPi ? $('piUpdateBtn') : $('updateBtn');
-  const installing = isPi
-    ? !(state.piUpdate && state.piUpdate.installed)
-    : !state.update.installed;
+  const installing = isPi ? !curEnv().piUpdate || !curEnv().piUpdate.installed : !curEnv().update.installed;
   btn.disabled = true;
   btn.classList.add('spinning');
   btn.title = installing ? '安装中…' : '更新中…';
@@ -178,12 +304,13 @@ async function runUpdate(target = 'pi-web') {
 
   state.updating = false;
   btn.classList.remove('spinning');
-  btn.disabled = isPi ? !(state.piUpdate && state.piUpdate.resolved) : false;
+  btn.disabled = isPi ? !(curEnv().piUpdate && curEnv().piUpdate.resolved) : false;
 
   if (res.ok) {
     appendLog('update', `${tag}✅ 完成,当前版本 v${res.version}\n`);
     toast(`${isPi ? 'pi' : 'pi-web'} ${installing ? '已安装' : '已更新'} → v${res.version}`, 'ok');
-    await Promise.all([detectEnv({ silent: true }), checkUpdate({ silent: true })]);
+    // 装完后的结果必须重新取:在途的旧请求(安装前发出)不能冒充最新状态
+    await Promise.all([detectEnv({ silent: true, fresh: true }), checkUpdate({ silent: true, fresh: true })]);
   } else {
     appendLog('update', `${tag}❌ ${installing ? '安装' : '更新'}失败:${res.error}\n`);
     toast(`${installing ? '安装' : '更新'}失败:${(res.error || '').split('\n')[0]}`, 'err');
@@ -310,6 +437,7 @@ function renderMode() {
   $('serverScope').textContent = isRemote ? `· 远程 ${(r && r.host) || ''}` : '';
   renderTabs();
   renderDefaultBtn();
+  renderProxyToggle(); // 盾形开关显示的是当前目标的代理状态,随目标切换
 }
 
 // 设为默认(星标)状态:当前 Tab 是否已是默认
@@ -333,31 +461,67 @@ async function setDefaultTarget() {
   toast('已设为应用启动默认', 'ok');
 }
 
-// 代理开关(顶层目标条 🛡):仅切换 enabled,配置本体在代理设置卡
+// 代理按目标各配一份(本机一份、每个远程档案一份)。主进程在配置里给出每个目标的代理视图
+function proxyViewOf(id) {
+  const views = (state.cfg && state.cfg.proxyViews) || {};
+  if (id === 'local') return views.local || {};
+  return (views.remotes || {})[id] || {};
+}
+
+// 当前目标的名称,用于提示文案
+function targetLabel() {
+  const r = activeRemote();
+  return state.mode === 'remote' ? `远程 ${(r && r.host) || '(未配置)'} ` : '本机 ';
+}
+
+// 把一份代理写进当前目标:本机 → 顶层 proxy;远程 → 该档案自己的 proxy(其它档案不动)。
+// 与该目标已存的代理合并:表单里没有 enabled,保存地址不能把启用状态冲掉
+function proxyPatch(form) {
+  if (state.mode !== 'remote') return { proxy: form };
+  return {
+    remotes: state.remotes.map((r) => (r.id === state.activeRemoteId ? { ...r, proxy: { ...(r.proxy || {}), ...form } } : r)),
+  };
+}
+
+// 代理开关(顶层目标条 🛡):切的是当前目标的 enabled,配置本体在代理设置卡
 function renderProxyToggle() {
   const b = $('proxyToggleBtn');
   if (!b) return;
-  const p = (state.cfg && state.cfg.proxy) || {};
+  const p = proxyViewOf(currentTargetId());
   const on = !!(p.enabled && p.primaryUrl);
   b.classList.toggle('on', on);
   const check = b.querySelector('.proxy-check');
   if (check) check.style.display = on ? 'block' : 'none';
   b.title = on
-    ? `代理已启用:${p.primaryUrl} —— 点击关闭`
-    : '代理未启用 —— 点击启用(需先在代理设置中填写服务器与端口)';
+    ? `${targetLabel()}代理已启用:${p.primaryUrl} —— 点击关闭`
+    : `${targetLabel()}代理未启用 —— 点击启用(需先在代理设置中填写代理服务器与端口)`;
 }
 
 async function toggleProxy() {
-  const p = (state.cfg && state.cfg.proxy) || {};
+  const p = proxyViewOf(currentTargetId());
   const enabling = !(p.enabled && p.primaryUrl);
   if (enabling && (!p.host || !p.port)) {
-    toast('请先在代理设置中填写代理服务器与端口', 'err');
+    toast('请先在代理设置中填写该目标的代理服务器与端口', 'err');
     return;
   }
-  const cfg = await window.piApi.setConfig({ proxy: { ...p, enabled: enabling } });
+  const cfg = await window.piApi.setConfig(proxyPatch({
+    enabled: enabling,
+    protocol: p.protocol,
+    host: p.host,
+    port: p.port,
+    bypass: p.bypass || '',
+  }));
   state.cfg = cfg;
-  renderProxyToggle();
-  toast(enabling ? '代理已启用' : '代理已关闭', 'ok');
+  state.remotes = cfg.remotes || [];
+  renderMode();
+  // 代理在服务启动时才注入:运行中的服务不会因为改了开关而改变出口
+  const running = curServer().running;
+  toast(
+    running
+      ? `${targetLabel()}代理已${enabling ? '启用' : '关闭'};服务运行中,下次启动服务时生效`
+      : `${targetLabel()}代理已${enabling ? '启用' : '关闭'}`,
+    running ? '' : 'ok'
+  );
 }
 
 // 切换目标 Tab(本机 / 某台远程):不停任何服务,仅切换展示与操作对象
@@ -371,13 +535,12 @@ async function switchTarget(id, { force = false } = {}) {
   const patch = isLocal ? { mode: 'local' } : { mode: 'remote', activeRemoteId: id };
   const cfg = await window.piApi.setConfig(patch);
   applyCfg(cfg);
-  state.env = null;
-  state.update = { installed: null, latest: null, outdated: false };
-  state.piUpdate = null;
   showConsole();
   fillRemoteForm(activeRemote());
+  fillProxyForm(); // 代理卡切换到该目标自己的代理(未保存的编辑随之丢弃)
   renderMode();
   renderServer();
+  renderEnvState(); // 该目标自己的检测结果:有上次结果就先画,没有则显示「—」
   // 日志弹窗开着时跟随切换到新目标的日志
   if (logModalSource && logModalSource.startsWith('server:')) openLogModal(serverSourceKey());
 
@@ -459,7 +622,7 @@ function setServerPolling() {
 }
 
 async function startServer() {
-  if (!curServer().running && (!state.env || !state.env.piWeb.ok)) {
+  if (!curServer().running && (!curEnv().env || !curEnv().env.piWeb.ok)) {
     toast('未检测到 pi-web,请先安装或更新', 'err');
     return;
   }
@@ -673,15 +836,19 @@ async function addRemote() {
     keyPath: '',
     remotePort: 30141,
     hostFingerprint: '',
+    // 新服务器默认不走代理:要哪台走、走哪个代理,逐台各自配置
+    proxy: { enabled: false, protocol: 'http', host: '', port: 0, bypass: '' },
   };
   state.remotes = [...state.remotes, profile];
   state.activeRemoteId = id;
   const cfg = await window.piApi.setConfig({ remotes: state.remotes, activeRemoteId: id });
   applyCfg(cfg);
   fillRemoteForm(profile);
+  fillProxyForm(); // 代理卡跟随目标:新服务器显示它自己的(空的)代理
   renderMode();
   renderRemoteSelect();
   renderServer();
+  renderEnvState(); // 新档案还没有任何检测结果:不沿用原目标的数值
   openServersModal();
   $('remoteHostInput').focus();
   toast('已新增远程服务器,请填写主机与用户名');
@@ -702,6 +869,7 @@ async function delRemote(id) {
   applyCfg(cfg);
   delete state.servers.remotes[target.id];
   delete state.logs.remotes[target.id];
+  delete state.envs.remotes[target.id];
   renderMode();
   renderRemoteSelect();
   renderServer();
@@ -734,11 +902,13 @@ async function saveCurrentRemote() {
   renderMode();
   renderRemoteSelect();
   renderServer();
+  fillProxyForm(); // 主机/用户可能被改了:代理卡标题里的服务器随之刷新
+  renderEnvState(); // 档案的连接身份可能被改了:那是别的服务器,旧检测结果作废并立即反映到页面
   toast('远程配置已保存', 'ok');
 
   // 该目标首次具备完整信息时自动检测
   const r = activeRemote();
-  if (state.mode === 'remote' && r && r.host && r.user && !state.env) {
+  if (state.mode === 'remote' && r && r.host && r.user && !curEnv().env) {
     await detectEnv({ silent: true });
     await checkUpdate({ silent: true });
     const st = await window.piApi.serverState();
@@ -759,6 +929,8 @@ async function testRemote() {
   const cfg = await window.piApi.setConfig({ remotes: state.remotes, activeRemoteId: state.activeRemoteId });
   state.cfg = cfg;
   state.remotes = cfg.remotes || [];
+  renderEnvState(); // 表单里的主机/用户可能指向了另一台服务器:旧检测结果作废
+  fillProxyForm(); // 代理卡标题里的服务器随之刷新
 
   const badge = $('remoteConnBadge');
   badge.className = 'badge badge-idle';
@@ -786,16 +958,28 @@ async function testRemote() {
 
 function fillConfigForm(cfg) {
   $('portInput').value = cfg.port;
-  const p = cfg.proxy || {};
+  $('registryInput').value = cfg.registry || '';
+  fillProxyForm();
+  fillRemoteForm(activeRemote());
+}
+
+// 代理卡跟随当前目标:显示的是该目标自己的代理(本机一份、每个远程档案一份)。
+// 只在切换目标/保存后调用 —— 不能放进 renderMode 之类的常规渲染,否则会冲掉正在编辑的表单
+function fillProxyForm() {
+  const p = proxyViewOf(currentTargetId());
   $('proxyProtoSelect').value = ['http', 'socks4', 'socks5'].includes(p.protocol) ? p.protocol : 'http';
   $('proxyHostInput').value = p.host || '';
   $('proxyPortInput').value = p.port || '';
   $('proxyBypassInput').value = p.bypass || '';
-  $('registryInput').value = cfg.registry || '';
-  fillRemoteForm(activeRemote());
+  const isRemote = state.mode === 'remote';
+  const host = (activeRemote() || {}).host || '';
+  $('proxyScope').textContent = isRemote ? `· 远程 ${host}` : '· 本机';
+  $('proxyHint').textContent = isRemote
+    ? `此处保存的是「${host || '该服务器'}」这台服务器自己的代理,启用/关闭用目标条上的盾形开关;在该服务器的 pi-web 启动时注入,运行中的服务重启后生效。地址按该服务器的网络填写;填 127.0.0.1 表示用本机(运行本应用的电脑)上的代理,经 SSH 反向隧道送达。`
+    : '此处保存的是本机自己的代理,启用/关闭用目标条上的盾形开关。本机 pi-web 服务(127.0.0.1)始终不走代理;内嵌页面始终使用本机的这份代理。';
 }
 
-// 读取代理表单(协议下拉单行 + 不代理列表 + 远程开关)
+// 读取代理表单(协议下拉单行 + 不代理列表)
 function readProxyForm() {
   return {
     protocol: $('proxyProtoSelect').value,
@@ -820,12 +1004,19 @@ async function saveConfig() {
     toast(proxyErr, 'err');
     return;
   }
+  // 代理只写进当前目标;registry 是所有目标共用的
   const cfg = await window.piApi.setConfig({
-    proxy: proxyForm,
+    ...proxyPatch(proxyForm),
     registry: $('registryInput').value.trim(),
   });
   state.cfg = cfg;
-  toast('设置已保存', 'ok');
+  state.remotes = cfg.remotes || [];
+  renderMode();
+  const running = curServer().running;
+  toast(
+    running ? '设置已保存;服务运行中,代理在下次启动服务时生效' : '设置已保存',
+    running ? '' : 'ok'
+  );
 }
 
 // 端口在 Tab 上改动即保存(change 触发);运行中自动重启
@@ -1039,6 +1230,12 @@ function bindEvents() {
 
 /* ---------------- 启动 ---------------- */
 
+// 当前目标是否具备检测条件(远程需已填主机与用户名)
+function canDetectTarget() {
+  const r = activeRemote();
+  return state.mode !== 'remote' || !!(r && r.host && r.user);
+}
+
 async function init() {
   bindEvents();
 
@@ -1050,9 +1247,7 @@ async function init() {
   renderProxyToggle();
   renderServer();
 
-  const r = activeRemote();
-  const canDetect = state.mode !== 'remote' || !!(r && r.host && r.user);
-  if (canDetect) {
+  if (canDetectTarget()) {
     await detectEnv({ silent: true });
     await checkUpdate({ silent: true });
   }
@@ -1065,7 +1260,9 @@ async function init() {
   }
   renderServer();
 
-  if (cfg.autoStart && state.env && state.env.piWeb.ok && !curServer().running && canDetect) {
+  // 启动检测期间用户已切走目标时,以切换后的目标为准:等它在途的检测完成,再决定是否自启
+  await (pendingOf(detectInflight, curTarget()) || null);
+  if (cfg.autoStart && curEnv().env && curEnv().env.piWeb.ok && !curServer().running && canDetectTarget()) {
     await startServer();
   }
 }

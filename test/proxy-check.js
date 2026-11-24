@@ -84,8 +84,29 @@ async function main() {
   // 5. remoteEnvPrefix(远程系统指令)
   let pre = await proxy.remoteEnvPrefix({ proxy: { enabled: false } });
   assert(pre === '', '远程前缀:未启用 → 空');
-  pre = await proxy.remoteEnvPrefix({ proxy: { enabled: true, remote: false, http: { host: 'h', port: 1 } } });
-  assert(pre === '', '远程前缀:remote 关闭 → 空');
+
+  // 5b. 代理按目标各一份:远程模式取激活档案自己的那份,本机模式取顶层 proxy;内嵌页面始终用本机那份
+  const own = { enabled: true, protocol: 'socks5', host: '10.0.0.1', port: 1080, bypass: '*.a.com' };
+  const twoTargets = {
+    mode: 'remote',
+    proxy: { enabled: true, protocol: 'http', host: '10.9.9.9', port: 9 }, // 本机的
+    remotes: [
+      { id: 'r1', host: '10.0.0.1', proxy: own },
+      { id: 'r2', host: '10.0.0.2', proxy: { enabled: false, protocol: 'http', host: '10.0.0.2', port: 2 } },
+    ],
+  };
+  twoTargets.remote = twoTargets.remotes[0];
+  px = proxy.parseProxy(twoTargets);
+  assert(px.primaryUrl === 'socks5://10.0.0.1:1080' && px.bypass === '*.a.com', '按目标:远程模式取激活档案自己的代理(不是顶层那份)');
+  assert(proxy.parseProxy(twoTargets, 'local').primaryUrl === 'http://10.9.9.9:9', "按目标:target='local' 强制取本机那份");
+  assert(proxy.parseProxy({ ...twoTargets, mode: 'local' }).primaryUrl === 'http://10.9.9.9:9', '按目标:本机模式取顶层 proxy');
+  const otherOff = { ...twoTargets, remote: twoTargets.remotes[1] };
+  assert(proxy.parseProxy(otherOff).enabled === false, '按目标:这台档案关着代理 → 未启用(别台开着不影响)');
+  pre = await proxy.remoteEnvPrefix(twoTargets, { resolveTunnel: async () => { throw new Error('非回环地址不应建隧道'); } });
+  assert(pre.includes("http_proxy='socks5://10.0.0.1:1080'") && pre.includes("'a.com"), '远程前缀:注入的是这台服务器自己的代理与不代理列表');
+  assert((await proxy.remoteEnvPrefix(otherOff)) === '', '远程前缀:这台服务器关着代理 → 不注入');
+  assert(proxy.sessionConfig(twoTargets).proxyRules === 'http=10.9.9.9:9;https=10.9.9.9:9', '内嵌页面:当前目标是远程时仍用本机那份代理');
+  assert(proxy.sessionConfig(twoTargets).proxyBypassRules.includes('10.0.0.1'), '内嵌页面:远程主机自动直连');
   pre = await proxy.remoteEnvPrefix({ proxy: { enabled: true, http: { host: '172.21.170.62', port: 10808 }, bypass: '*.foo.com' } });
   assert(pre.includes("http_proxy='http://172.21.170.62:10808'") && pre.includes("HTTP_PROXY='http://172.21.170.62:10808'"), '远程前缀:非本机代理直传地址');
   assert(pre.includes('no_proxy=') && pre.includes("'foo.com,127.0.0.1"), '远程前缀:no_proxy 注入');

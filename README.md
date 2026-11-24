@@ -14,17 +14,18 @@
   - **多服务器管理**:远程连接卡片中可按 IP 创建/删除/切换多台服务器档案(`user@host` 下拉选择),每台的检测、更新、服务、日志相互独立,可各自同时运行
 - **两种 SSH 认证**:私钥(免密 passphrase,默认查 ~/.ssh/id_rsa、~/.ssh/id_ed25519,可指定路径)或用户名密码(含 keyboard-interactive 兜底;密码明文保存在本机配置文件)
   - 切换模式或切换服务器只更换控制台的展示与操作对象,不停止任何一方的服务;模式切换按钮上的绿点标示该模式服务是否在运行
-- **环境检测**:Node.js、npm、pi CLI、pi-web(全局包)、桌面端自身的版本,带状态指示(远程模式下检测的是远程机器)
+- **环境检测**:Node.js、npm、pi CLI、pi-web(全局包)、桌面端自身的版本,带状态指示(远程模式下检测的是远程机器)。本机与每台远程服务器**各查各的、各存各的**:检测结果按目标归档,切 Tab 立即显示该服务器自己的上次结果并在后台刷新;在途检测不会串到别的服务器,档案改了主机/用户后旧结果作废
 - **版本检测**:对比当前模式(本地/远程)的 pi-web 与 npm registry 最新版,徽标提示「已是最新 / 可更新 / 未安装 / 检测失败」
 - **一键更新 / 一键安装**:pi 与 pi-web 均支持;已安装时执行 `npm install -g <pkg>@latest` 更新,未安装时按钮自动变为「一键安装」执行同一命令完成安装(pi 未安装时使用官方包 @earendil-works/pi-coding-agent)。npm 输出实时回显;更新前自动停掉本应用启动的服务,完成后自动重启
-- **代理设置(独立模块 `lib/proxy.js`,协议下拉单行 + 不代理列表)**:
+- **代理设置(独立模块 `lib/proxy.js`,协议下拉单行 + 不代理列表;每个目标各一份)**:
+  - **按目标配置,不是全局一份**:本机一份、每台远程服务器各一份(存在各自的档案里),互不影响 —— 哪台走代理、走哪个代理逐台配置。代理设置卡跟随当前目标(标题标明「· 本机 / · 远程 主机」),编辑与保存的都是该目标自己的;新增的服务器默认不走代理
   - **支持 SOCKS(v4/v5)**:代理协议下拉选择 —— HTTP / HTTPS 归为一类,SOCKS5 / SOCKS4 各一项;兼容旧版分协议表与单一地址,自动迁移
   - 不代理的地址列表:每行一条,支持通配符(`*.internal.example.com`)与网段(`192.168.0.0/16`);`127.0.0.1 / ::1 / localhost` 始终直连
-  - 启用/关闭在「系统服务」卡中的**盾形代理开关**(高亮+对勾=已启用);代理设置卡仅保存配置
-  - **本地模式**:通过系统指令(环境变量)注入 —— 子进程 `HTTP(S)_PROXY / ALL_PROXY / NO_PROXY`;内嵌页面 `session.setProxy(proxyRules + proxyBypassRules)`
-  - **远程模式**:代理即 **pi-web 启动时注入代理指令**(环境变量前缀挂在 nohup 命令上,作用于服务的出站 API 流量);npm 检测/安装命令不注入代理,走远程自身网络。代理地址在本机(127.0.0.1/localhost)时自动经 **SSH 反向隧道**(`ssh -R` 语义,端口 17890 起)送达远程,对服务器零侵入,断开连接即失效
-  - 远程代理可通过「远程模式也使用该代理」开关单独关闭;内嵌服务页直连远程主机,已配置的远程主机自动加入不代理列表
-  - 可选自定义 npm registry(镜像源),本地与远程均会传递
+  - 启用/关闭在目标条上的**盾形代理开关**(高亮+对勾=当前目标的代理已启用);代理设置卡仅保存配置、不改变启用状态
+  - **本机**:本机那份代理用于本机子进程(系统指令注入 `HTTP(S)_PROXY / ALL_PROXY / NO_PROXY`)与内嵌页面(`session.setProxy`)。内嵌页面的请求总是从本机发出,所以无论当前目标是哪台远程,页面都用本机这份;已配置的远程主机自动直连
+  - **远程**:每台服务器那份代理在 **pi-web 启动时注入**(环境变量前缀挂在 nohup 命令上,作用于服务的出站 API 流量),运行中的服务重启后生效;地址按该服务器的网络填写。地址是回环(127.0.0.1/localhost)时视为本机(运行本应用的电脑)上的代理,经 **SSH 反向隧道**(`ssh -R` 语义,端口 17890 起)送达,对服务器零侵入,断开连接即失效。远程的 npm 检测/安装命令不注入代理,走远程自身网络
+  - 可选自定义 npm registry(镜像源),所有目标共用
+- **旧版配置自动迁移**:v1.1.3 及更早只有全局一份代理。升级后它成为「本机」的代理,每台已有服务器各继承一份地址相同的,启用状态跟随当时「远程模式是否使用代理」(旧开关缺省为使用)—— 行为不变,之后可逐台修改
 - **端口占用检测**:启动前探测默认端口(30141)
   - 若已有**外部启动**的 pi-web(本地端口被占 / 远程端口已有服务),直接内嵌复用并标注「外部」;外部服务消失时自动感知
   - 外部实例默认不代停;点「停止」时远程模式会弹原生确认框,知情后可**强制结束**(宽匹配该端口上的 pi-web 并结束端口监听进程),本地模式仍仅提示
@@ -41,10 +42,13 @@ npm install
 npm start          # 启动应用
 npm run smoke      # 无界面自检:环境检测结果 + 最新版本查询
 node test/scripts-check.js        # 远程模式 stdin 脚本自检(无需 SSH)
-node test/config-check.js         # 多服务器档案配置逻辑自检(离线)
-node test/proxy-check.js          # 代理模块自检(分协议表/迁移/三类出口,离线)
+node test/proxy-check.js          # 代理模块自检(分协议表/迁移/三类出口/按目标取配置,离线)
+node test/config-check.js         # 多服务器档案配置逻辑自检(含旧版全局代理 → 每台一份的迁移,离线)
 node test/orphan-adopt.js         # 本地孤儿回收自检(拉起→强杀模拟→认领→停止,真实本地服务)
 node test/remote-adopt.js         # 远程服务归属自检(认领/断连保持归属/停止复核,mock SSH 离线)
+node test/remote-env-cache.js     # 远程环境检测缓存自检(各服务器各查各的/各存各的,mock SSH 离线)
+node test/ipc-target.js           # IPC 按目标自检(检测按指明的目标执行;每个目标各自的代理视图,离线)
+node test/renderer-target.js      # 渲染层按目标自检(假 DOM 真加载 app.js:环境检测/代理切 Tab、晚到响应、改档案不串台)
 node test/integration.js          # 本地集成测试:服务启停、外部实例识别、真实更新
 node test/remote.js user@host [--key ~/.ssh/id_rsa] [--install]   # 远程链路集成测试(需真实 SSH 服务器)
 ```
@@ -68,7 +72,7 @@ main.js            # Electron 主进程入口:窗口、代理、smoke 模式
 preload.js         # contextBridge 暴露 piApi(渲染层 ↔ 主进程 IPC)
 lib/
   proc.js          # 子进程执行(流式输出)、semver 工具
-  proxy.js         # 代理独立模块:分协议表+不代理列表 → session 配置 / 本地子进程 env / 远程命令前缀
+  proxy.js         # 代理独立模块:分协议表+不代理列表(每个目标各一份) → session 配置 / 本地子进程 env / 远程命令前缀
   config.js        # 配置持久化(userData/config.json)
   env.js           # 本地环境检测(node/npm/pi/pi-web)与最新版本查询
   server.js        # 本地 pi-web 服务管理:启动/停止/端口探测/外部实例识别
@@ -79,12 +83,15 @@ lib/
 renderer/
   index.html       # 两个页面:控制台(模式切换+远程配置) + 内嵌服务页(webview)
   style.css
-  app.js           # 页面逻辑与事件(本地/远程双服务状态独立维护)
+  app.js           # 页面逻辑与事件(本机/各远程各自维护服务状态、检测结果与代理)
 test/
   scripts-check.js # 远程 stdin 脚本自检
   integration.js   # 本地集成测试
   orphan-adopt.js  # 本地孤儿回收自检(真实本地服务)
-  remote-adopt.js  # 远程服务归属自检(mock SSH,离线)
+  remote-adopt.js     # 远程服务归属自检(mock SSH,离线)
+  remote-env-cache.js # 远程环境检测缓存自检(mock SSH,离线)
+  ipc-target.js       # IPC 按目标自检(离线)
+  renderer-target.js  # 渲染层按目标自检(假 DOM,离线)
   remote.js        # 远程链路集成测试(手动,需真实服务器)
 ```
 
@@ -98,12 +105,11 @@ test/
   "defaultMode": "last",
   "defaultRemoteId": "",
   "proxy": {
-    "enabled": true,
+    "enabled": false,
     "protocol": "http",
-    "host": "172.21.170.62",
-    "port": 10808,
-    "bypass": "192.168.0.0/16\n172.16.0.0/12\n10.0.0.0/8\n*.internal.example.com",
-    "remote": true
+    "host": "",
+    "port": 0,
+    "bypass": ""
   },
   "registry": "",
   "port": 30141,
@@ -117,7 +123,14 @@ test/
       "user": "root",
       "keyPath": "",
       "remotePort": 30141,
-      "hostFingerprint": "…sha256 hex…"
+      "hostFingerprint": "…sha256 hex…",
+      "proxy": {
+        "enabled": true,
+        "protocol": "http",
+        "host": "172.21.170.62",
+        "port": 10808,
+        "bypass": "192.168.0.0/16\n172.16.0.0/12\n10.0.0.0/8\n*.internal.example.com"
+      }
     },
     {
       "id": "r2",
@@ -126,13 +139,22 @@ test/
       "user": "ubuntu",
       "keyPath": "~/.ssh/id_rsa.work",
       "remotePort": 30141,
-      "hostFingerprint": ""
+      "hostFingerprint": "",
+      "proxy": {
+        "enabled": false,
+        "protocol": "http",
+        "host": "10.0.0.8",
+        "port": 7890,
+        "bypass": ""
+      }
     }
   ]
 }
 ```
 
 `mode` 为 `local` / `remote`;`remotes` 是远程服务器档案列表(应用内「新增/删除」维护),`activeRemoteId` 指向当前操作的档案;`defaultMode`/`defaultRemoteId` 为应用启动模式默认设置(`last` 跟随上次 / `local` 固定本地 / `remote` 固定远程并激活 `defaultRemoteId` 指定的档案)。本地与所有远程服务可同时运行。`keyPath` 留空时按 `~/.ssh/id_rsa`、`~/.ssh/id_ed25519` 顺序查找;`hostFingerprint` 由应用在首次连接成功后自动写入。
+
+代理按目标各一份:顶层 `proxy` 是**本机**的代理,每个远程档案的 `proxy` 是**那台服务器**自己的(协议 `http` 涵盖 HTTPS)。v1.1.3 及更早版本的配置只有顶层一份全局代理 —— 读取时自动迁移:它成为本机的代理,每台已有服务器各继承一份,启用状态跟随当时的「远程模式也使用代理」开关。
 
 ## 免密 RSA 配置指引
 
@@ -150,9 +172,9 @@ ssh user@远程主机 'echo ok'             # 验证免密生效
 
 - **更新报 EBUSY / 文件被占用**:有 pi-web 进程占着包目录。若是本应用启动的(含上次遗留、已被自动认领回收的),更新时会自动停止;若是外部启动的,会提示具体的主机与端口,请在该服务器上手动停止。
 - **「该 pi-web 由外部启动,无法停止」**:v1.1.3 起远程模式不会再对自己启动的实例误报 —— SSH 断开保持归属、重启后凭 pid 文件认领;确实不是本应用启动的,点「停止」并在确认框中选择「强制结束」即可(会结束该端口上的全部进程)。
-- **检查更新失败**:多为网络/代理问题,确认代理地址可达,或填写国内 registry 镜像。(远程模式默认经环境变量走应用代理,本机代理经 SSH 反向隧道送达;也可关闭「远程模式也使用该代理」让远程直连。)
+- **检查更新失败**:多为网络/代理问题,确认代理地址可达,或填写国内 registry 镜像。(本机的检测/安装命令走本机那份代理,可用目标条上的盾形开关关闭;远程的检测/安装命令不注入代理,走那台服务器自身网络。)
 - **远程服务页打不开(超时)**:远程 pi-web 需监听 0.0.0.0 且防火墙放行服务端口(应用启动的实例已自动监听 0.0.0.0);外部手动启动的实例若只监听 127.0.0.1 将无法直连接入。
-- **远程走代理失败**:确认远程服务器 sshd 允许 TCP 转发(`AllowTcpForwarding yes`,反向隧道需要);代理需接受来自远程的回环连接。socks 代理对 npm 生效需 npm ≥ 7(支持 socks 代理地址)。
+- **远程走代理失败**:代理地址按**该服务器**的网络填写,确认从那台服务器可达;填 `127.0.0.1` 表示用本机(运行本应用的电脑)上的代理,经 SSH 反向隧道送达 —— 此时远程 sshd 需允许 TCP 转发(`AllowTcpForwarding yes`),且代理需接受来自远程的回环连接。代理在该服务器的 pi-web 启动时注入:改了之后要重启它的服务才生效。socks 代理对 npm 生效需 npm ≥ 7(支持 socks 代理地址)。
 - **pi 未检测到**:pi-web 依赖 pi CLI,先全局安装 pi 后点「重新检测」。(远程模式在远程机器上检测/安装。)
 - **SSH 认证失败**:私钥方式确认公钥已加入远程 `~/.ssh/authorized_keys` 且私钥未设 passphrase;密码方式确认用户名密码正确、服务器未禁用密码登录(`PasswordAuthentication yes`)。
 - **主机指纹校验失败**:远程服务器重装/换 IP 后公钥变化会被拒绝;确认安全后删除配置文件中对应档案的 `hostFingerprint` 重新连接。

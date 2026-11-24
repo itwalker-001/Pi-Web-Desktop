@@ -5,8 +5,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('piApi', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
-  detectEnv: () => ipcRenderer.invoke('env:detect'),
-  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  detectEnv: (target) => ipcRenderer.invoke('env:detect', target),
+  checkUpdate: (target) => ipcRenderer.invoke('update:check', target),
   runUpdate: (target) => ipcRenderer.invoke('update:run', target),
   serverStart: () => ipcRenderer.invoke('server:start'),
   serverStop: (opts) => ipcRenderer.invoke('server:stop', opts),

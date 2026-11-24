@@ -84,6 +84,48 @@ function main() {
   assert(cfg3.remotes.length === 1 && cfg3.remotes[0].host === '1.2.3.4' && cfg3.remotes[0].hostFingerprint === 'ff', '旧版单档案迁移为 remotes[0]');
   assert(cfg3.activeRemoteId === cfg3.remotes[0].id && cfg3.remote.host === '1.2.3.4', '迁移后激活指向该档案');
 
+  // 9. 代理按目标各一份:旧版档案没有自己的 proxy,迁移时沿用当时的全局代理,
+  //    启用状态跟随旧的「远程模式也使用该代理」开关(proxy.remote,缺省为使用)
+  const legacyGlobal = { enabled: true, protocol: 'http', host: '10.1.1.1', port: 10808, bypass: '*.corp' };
+  const ownProxy = { enabled: true, protocol: 'socks5', host: '3.3.3.3', port: 1080, bypass: '' };
+  const loadLegacy = (globalProxy) => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'config.json'),
+      JSON.stringify({
+        mode: 'remote',
+        proxy: globalProxy,
+        remotes: [{ id: 'a', host: '1.1.1.1', user: 'u' }, { id: 'b', host: '2.2.2.2', user: 'u', proxy: ownProxy }],
+      }),
+      'utf8'
+    );
+    delete require.cache[require.resolve('../lib/config')];
+    return require('../lib/config');
+  };
+  const cfgFile = () => JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8'));
+
+  let configX = loadLegacy(legacyGlobal); // 旧开关缺省 = 远程也使用
+  let a = configX.get().remotes[0].proxy;
+  assert(a.enabled === true && a.host === '10.1.1.1' && a.port === 10808 && a.bypass === '*.corp', '迁移(旧的远程也使用):档案继承全局代理的地址,且保持启用');
+  assert(!('remote' in a), '迁移:旧的「远程也使用」开关不再带入档案');
+  let b = configX.get().remotes[1].proxy;
+  assert(b.enabled === true && b.protocol === 'socks5' && b.host === '3.3.3.3', '迁移:已有自己代理的档案原样保留(不被全局覆盖)');
+
+  configX = loadLegacy({ ...legacyGlobal, remote: false }); // 旧开关关闭:远程不走代理
+  a = configX.get().remotes[0].proxy;
+  assert(a.enabled === false && a.host === '10.1.1.1', '迁移(旧的远程不使用):地址保留、默认关闭');
+
+  configX = loadLegacy({ ...legacyGlobal, enabled: false });
+  a = configX.get().remotes[0].proxy;
+  assert(a.enabled === false, '迁移:全局代理原本就关着 → 各档案也关着');
+
+  configX = loadLegacy(legacyGlobal);
+  assert(configX.get().proxy.host === '10.1.1.1' && configX.get().proxy.enabled === true, '顶层 proxy 原样保留,含义变为「本机」的代理');
+  const saved = configX.save({ remotes: configX.get().remotes.map((r) => (r.id === 'a' ? { ...r, proxy: { enabled: false, protocol: 'http', host: '10.1.1.1', port: 10808, bypass: '' } } : r)) });
+  assert(saved.remotes[0].proxy.enabled === false && saved.remotes[1].proxy.enabled === true, '只改一台的代理:另一台不受影响');
+  const persisted = cfgFile();
+  assert(persisted.remotes[0].proxy && persisted.remotes[1].proxy && persisted.remotes[1].proxy.host === '3.3.3.3', '每个档案自己的代理落盘');
+  assert(!('remote' in persisted.proxy), '落盘的顶层 proxy 不再有旧的 remote 开关');
+
   fs.rmSync(tmpDir, { recursive: true, force: true });
   console.log('config 多档案逻辑: 全部通过');
 }
