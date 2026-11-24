@@ -1,14 +1,15 @@
-// 一次性:创建 GitHub Release 1.1.0 + 上传两个 exe(走指定代理)。运行后删除。
+// 一次性:创建 GitHub Release + 上传安装包产物(走指定代理)。发版时改 TAG/ASSETS/正文标记后运行。
 'use strict';
 const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const REPO = 'itwalker-001/Pi-Web-Desktop';
-const TAG = '1.1.0';
+const TAG = '1.1.3';
 const PROXY = 'http://172.21.170.62:10808';
-const ASSETS = ['Pi Web Desktop Setup 1.1.0.exe', 'Pi Web Desktop 1.1.0.exe'];
+const ASSETS = ['Pi Web Desktop Setup 1.1.3.exe', 'Pi Web Desktop 1.1.3.exe'];
 
 function log(m) { console.log(new Date().toLocaleTimeString(), m); }
 
@@ -31,7 +32,12 @@ function api(url, method, tok, body, file) {
     args.push('--data-binary', '@' + file);
   } else {
     args.push('-H', 'Accept: application/vnd.github+json');
-    if (body) args.push('-d', JSON.stringify(body));
+    if (body) {
+      // 坑:含 emoji 的 JSON 走 -d 会静默空响应 —— 写入 Windows 可见路径的临时文件再 --data-binary
+      const tmp = path.join(os.tmpdir(), `pi-rel-body-${Date.now()}.json`);
+      fs.writeFileSync(tmp, JSON.stringify(body));
+      args.push('-H', 'Content-Type: application/json', '--data-binary', '@' + tmp);
+    }
   }
   const r = spawnSync('curl', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 920000 });
   const out = r.stdout || '';
@@ -46,8 +52,8 @@ function api(url, method, tok, body, file) {
 
 function releaseBody() {
   const md = fs.readFileSync(path.join(ROOT, 'RELEASE.md'), 'utf8');
-  const start = md.indexOf('## 🆕 v1.1.0 新增');
-  const end = md.indexOf('## 🛠 v1.0.3 新增');
+  const start = md.indexOf('## 🆕 v1.1.3 修复');
+  const end = md.indexOf('## 🆕 v1.1.2 修复');
   return start >= 0 ? md.slice(start, end > start ? end : undefined).trim() : md.slice(0, 2000);
 }
 
