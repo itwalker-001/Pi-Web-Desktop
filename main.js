@@ -82,7 +82,9 @@ const config = require('./lib/config');
 const server = require('./lib/server');
 const remote = require('./lib/remote');
 const remoteServer = require('./lib/remote-server');
+const codeServer = require('./lib/code-server');
 const proxy = require('./lib/proxy');
+const term = require('./lib/term');
 const { register: registerIpc } = require('./lib/ipc');
 const { detect, latestVersion } = require('./lib/env');
 const { attachWebContentsHooks } = require('./lib/webview-files');
@@ -229,7 +231,9 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   server.stop();
-  remoteServer.stopAll().finally(() => {
+  // 远程 pi-web 与按需启动的 code-server 一起回收(各自带超时,SSH 不通也不会卡住退出)
+  Promise.all([remoteServer.stopAll(), codeServer.stopAll()]).finally(() => {
+    term.stopAll(); // SSH 终端会话随连接回收(显式结束,不依赖连接断开事件)
     remote.disconnect();
     app.quit();
   });

@@ -6,6 +6,7 @@
         content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; frame-src http: https:; connect-src 'self' http: https:" />
   <title>Pi Web Desktop</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="vendor/xterm/xterm.css" />
 </head>
 <body>
   <header class="topbar">
@@ -27,6 +28,12 @@
   <div class="scope-bar">
     <span class="scope-label">目标</span>
     <div class="svc-tabs" id="svcTabs"></div>
+    <button id="termOpenBtn" class="svc-icon" title="打开 SSH 终端(仅远程)" aria-label="打开 SSH 终端">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4 17 10 11 4 5"></polyline>
+                <line x1="12" y1="19" x2="20" y2="19"></line>
+              </svg>
+            </button>
     <button id="proxyToggleBtn" class="svc-icon proxy" title="启用代理" aria-label="启用代理">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path>
@@ -35,124 +42,176 @@
             </button>
   </div>
 
-  <!-- ============ 控制台视图 ============ -->
+  <!-- ============ 控制台视图:三大块(Pi Web 配置 / Code Server 配置 / 代理设置) ============ -->
   <main id="consoleView">
-    <div class="col col-left">
-      <!-- 系统服务:本机 / 各远程(机器名)Tab,每个 Tab 一个服务地址 -->
-      <section class="card">
-        <div class="card-head">
-          <h2>系统服务 <span class="muted" id="serverScope"></span></h2>
+    <!-- 块一:Pi Web 配置(原「系统服务」+「环境检测」合并;内容按目标(本机/各远程)切换) -->
+    <section class="card card-full">
+      <div class="card-head">
+        <h2>Pi Web 配置 <span class="muted" id="serverScope"></span></h2>
+        <div class="card-actions">
           <span id="serverState" class="muted">已停止</span>
+          <button id="updateLogBtn" class="btn ghost sm">更新日志</button>
+          <button id="redetectBtn" class="btn ghost sm">重新检测</button>
         </div>
-        <div class="svc-panel">
-          <div class="form-row">
-            <label class="field">
-              <span class="field-label">主机</span>
-              <input type="text" id="svcHost" disabled />
-            </label>
-            <label class="field" id="localPortField">
-              <span class="field-label">端口</span>
-              <input type="number" id="portInput" min="1024" max="65535" />
-            </label>
-            <label class="field" id="remotePortField" hidden>
-              <span class="field-label">端口(webview 直连,需防火墙放行)</span>
-              <input type="number" id="remoteSrvPortInput" min="1024" max="65535" />
-            </label>
-          </div>
-          <div class="btn-row svc-actions">
-            <button id="startBtn" class="svc-icon primary" title="启动服务" aria-label="启动服务">
-              <svg class="ic-play" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                <polygon points="6 3 20 12 6 21 6 3"></polygon>
-              </svg>
-              <svg class="ic-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <line x1="10" y1="14" x2="21" y2="3"></line>
-              </svg>
-            </button>
-            <button id="stopBtn" class="svc-icon danger" title="停止服务" aria-label="停止服务" disabled>
-              <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                <rect x="6" y="6" width="12" height="12" rx="2"></rect>
-              </svg>
-            </button>
-            <button id="openBrowserBtn" class="svc-icon" title="在系统浏览器打开" aria-label="在系统浏览器打开" disabled>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="2" y1="12" x2="22" y2="12"></line>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-              </svg>
-            </button>
-            <button id="btnDefault" class="svc-icon star" title="设为应用启动默认" aria-label="设为应用启动默认">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-              </svg>
-            </button>
-            <button id="svcLogBtn" class="svc-icon" title="服务日志" aria-label="查看服务日志">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10 9 9 9 8 9"></polyline>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <div class="col col-right">
-      <!-- 环境检测:pi / pi-web 的检查更新内联在行上 -->
-      <section class="card">
-        <div class="card-head">
-          <h2>环境检测 <span class="muted" id="envScope"></span></h2>
-          <div class="card-actions">
-            <button id="updateLogBtn" class="btn ghost sm">更新日志</button>
-            <button id="redetectBtn" class="btn ghost sm">重新检测</button>
-          </div>
-        </div>
-        <ul class="env-list">
-          <li class="env-item">
-            <span class="env-name"><span class="dot" id="dot-node"></span>Node.js</span>
-            <span class="mono env-status" id="env-node">—</span>
-            <span class="muted env-type">运行时</span>
-          </li>
-          <li class="env-item">
-            <span class="env-name"><span class="dot" id="dot-npm"></span>npm</span>
-            <span class="mono env-status" id="env-npm">—</span>
-            <span class="muted env-type">包管理器</span>
-          </li>
-          <li class="env-item">
-            <span class="env-name"><span class="dot" id="dot-pi"></span>pi</span>
-            <span class="env-status-wrap">
-              <span class="mono env-status" id="env-pi" title="">—</span>
-              <button id="piUpdateBtn" class="env-act-icon" title="一键更新" aria-label="一键更新 pi">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="23 4 23 10 17 10"></polyline>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+      </div>
+      <div class="piweb-grid">
+        <div class="piweb-col">
+          <h3 class="block-sub">系统服务</h3>
+          <div class="svc-panel">
+            <div class="form-row">
+              <label class="field">
+                <span class="field-label">主机</span>
+                <input type="text" id="svcHost" disabled />
+              </label>
+              <label class="field" id="localPortField">
+                <span class="field-label">端口</span>
+                <input type="number" id="portInput" min="1024" max="65535" />
+              </label>
+              <label class="field" id="remotePortField" hidden>
+                <span class="field-label">端口(webview 直连,需防火墙放行)</span>
+                <input type="number" id="remoteSrvPortInput" min="1024" max="65535" />
+              </label>
+            </div>
+            <div class="btn-row svc-actions">
+              <button id="startBtn" class="svc-icon primary" title="启动服务" aria-label="启动服务">
+                <svg class="ic-play" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                </svg>
+                <svg class="ic-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <line x1="10" y1="14" x2="21" y2="3"></line>
                 </svg>
               </button>
-            </span>
-            <span class="muted env-type">pi CLI</span>
-          </li>
-          <li class="env-item">
-            <span class="env-name"><span class="dot" id="dot-piweb"></span>pi-web <span class="muted">(@agegr/pi-web)</span></span>
-            <span class="env-status-wrap">
-              <span class="mono env-status" id="env-piweb">—</span>
-              <button id="updateBtn" class="env-act-icon" title="一键更新" aria-label="一键更新 pi-web">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="23 4 23 10 17 10"></polyline>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              <button id="stopBtn" class="svc-icon danger" title="停止服务" aria-label="停止服务" disabled>
+                <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <rect x="6" y="6" width="12" height="12" rx="2"></rect>
                 </svg>
               </button>
-            </span>
-            <span class="muted env-type" id="env-piweb-extra">全局包</span>
-          </li>
-        </ul>
-      </section>
-    </div>
+              <button id="openBrowserBtn" class="svc-icon" title="在系统浏览器打开" aria-label="在系统浏览器打开" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="2" y1="12" x2="22" y2="12"></line>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+              </button>
+              <button id="btnDefault" class="svc-icon star" title="设为应用启动默认" aria-label="设为应用启动默认">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+              </button>
+              <button id="svcLogBtn" class="svc-icon" title="服务日志" aria-label="查看服务日志">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                  <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="piweb-col">
+          <h3 class="block-sub">环境检测 <span class="muted" id="envScope"></span></h3>
+          <ul class="env-list">
+            <li class="env-item">
+              <span class="env-name"><span class="dot" id="dot-node"></span>Node.js</span>
+              <span class="mono env-status" id="env-node">—</span>
+              <span class="muted env-type">运行时</span>
+            </li>
+            <li class="env-item">
+              <span class="env-name"><span class="dot" id="dot-npm"></span>npm</span>
+              <span class="mono env-status" id="env-npm">—</span>
+              <span class="muted env-type">包管理器</span>
+            </li>
+            <li class="env-item">
+              <span class="env-name"><span class="dot" id="dot-pi"></span>pi</span>
+              <span class="env-status-wrap">
+                <span class="mono env-status" id="env-pi" title="">—</span>
+                <button id="piUpdateBtn" class="env-act-icon" title="一键更新" aria-label="一键更新 pi">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                  </svg>
+                </button>
+              </span>
+              <span class="muted env-type">pi CLI</span>
+            </li>
+            <li class="env-item">
+              <span class="env-name"><span class="dot" id="dot-piweb"></span>pi-web <span class="muted">(@agegr/pi-web)</span></span>
+              <span class="env-status-wrap">
+                <span class="mono env-status" id="env-piweb">—</span>
+                <button id="updateBtn" class="env-act-icon" title="一键更新" aria-label="一键更新 pi-web">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                  </svg>
+                </button>
+              </span>
+              <span class="muted env-type" id="env-piweb-extra">全局包</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
 
-    <!-- 代理设置:每个目标各一份(本机 / 每台远程),跟随当前目标显示;底部通栏 -->
+    <!-- 块二:Code Server 配置(地址/监听端口/密码 + 安装/启停/打开;远程为托管模式,本机仅地址) -->
+    <section class="card card-full">
+      <div class="card-head">
+        <h2>Code Server 配置 <span class="muted" id="codeServerScope"></span></h2>
+        <div class="card-actions">
+          <span id="csState" class="muted">检测中…</span>
+          <button id="csRedetectBtn" class="btn ghost sm">重新检测</button>
+        </div>
+      </div>
+      <div class="form-grid cs-table">
+        <label class="field">
+          <span class="field-label">地址(可选;留空 = 本应用检测并按需启动)</span>
+          <input type="text" id="codeServerUrlInput" placeholder="留空自动检测,或填 http://192.168.1.100:8080" autocomplete="off" />
+        </label>
+        <label class="field" id="csPortField">
+          <span class="field-label">监听端口(0.0.0.0,被占自动顺延)</span>
+          <input type="number" id="csPortInput" min="1024" max="65535" placeholder="8080" />
+        </label>
+        <label class="field" id="csPasswordField">
+          <span class="field-label">登录密码(明文存于服务器;留空 = 沿用已有 / 自动生成)</span>
+          <input type="password" id="csPasswordInput" autocomplete="off" />
+        </label>
+      </div>
+      <div class="btn-row svc-actions cs-actions">
+        <button id="csStartBtn" class="svc-icon primary" title="启动" aria-label="启动 code-server" disabled>
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <polygon points="6 3 20 12 6 21 6 3"></polygon>
+          </svg>
+        </button>
+        <button id="csStopBtn" class="svc-icon danger" title="停止" aria-label="停止 code-server" disabled>
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+          </svg>
+        </button>
+        <button id="csOpenBtn" class="svc-icon" title="打开" aria-label="打开 code-server 窗口" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+        </button>
+        <button id="csInstallBtn" class="svc-icon" title="安装 / 更新" aria-label="安装或更新 code-server">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+        </button>
+        <span class="term-bar-flex"></span>
+        <button id="csSaveBtn" class="btn primary sm">保存配置</button>
+      </div>
+      <div class="proxy-foot">
+        <span class="muted hint" id="csHint"></span>
+      </div>
+    </section>
+
+    <!-- 块三:代理设置(每个目标各一份(本机 / 每台远程),跟随当前目标显示) -->
     <section class="card card-full">
       <div class="card-head">
         <h2>代理设置 <span class="muted" id="proxyScope"></span></h2>
@@ -177,6 +236,14 @@
         <label class="field">
           <span class="field-label">npm Registry(可选,所有目标共用)</span>
           <input type="text" id="registryInput" placeholder="https://registry.npmmirror.com" />
+        </label>
+        <label class="field">
+          <span class="field-label">启动时打开(所有目标共用)</span>
+          <select id="startupViewSelect">
+            <option value="">控制台(不自动打开)</option>
+            <option value="web">Pi-web 服务页</option>
+            <option value="term">SSH 终端(仅远程)</option>
+          </select>
         </label>
       </div>
       <label class="field proxy-bypass">
@@ -263,17 +330,40 @@
     </div>
   </div>
 
+  <!-- ============ 操作确认 ============ -->
+  <div id="confirmModal" class="modal-overlay confirm-overlay" hidden>
+    <div class="modal-card confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage confirmDetail">
+      <div class="confirm-heading">
+        <span id="confirmMark" class="confirm-mark" aria-hidden="true">!</span>
+        <h2 id="confirmTitle"></h2>
+      </div>
+      <p id="confirmMessage" class="confirm-message"></p>
+      <p id="confirmDetail" class="confirm-detail" hidden></p>
+      <div class="confirm-actions">
+        <button id="confirmCancelBtn" class="btn" type="button">取消</button>
+        <button id="confirmOkBtn" class="btn danger-solid" type="button"></button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 内嵌 Web 视图 ============ -->
   <section id="webView" hidden>
     <div class="webview-bar">
       <button id="backBtn" class="btn ghost sm">← 控制台</button>
       <span id="webUrl" class="mono"></span>
-      <button id="newPageBtn" class="btn ghost sm icon-btn" title="在新窗口再开一个页面" aria-label="新窗口">
+      <button id="webTermBtn" class="btn ghost sm icon-btn" title="切换到 SSH 终端(当前服务器;终端会话在两视图间切换时保留)" aria-label="切换到 SSH 终端">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-          <path d="M12 8v8M8 12h8"></path>
+          <polyline points="4 17 10 11 4 5"></polyline>
+          <line x1="12" y1="19" x2="20" y2="19"></line>
         </svg>
-        <span>新窗口</span>
+        <span>终端</span>
+      </button>
+      <button id="openEditorBtn" class="btn ghost sm icon-btn" title="在编辑器中打开 pi-web 当前项目(本机:VS Code;远程:code-server)" aria-label="在编辑器中打开当前项目">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m16 18 6-6-6-6"></path>
+          <path d="m8 6-6 6 6 6"></path>
+        </svg>
+        <span>编辑器</span>
       </button>
       <button id="refreshBtn" class="btn ghost sm icon-btn" title="刷新页面" aria-label="刷新页面">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
@@ -294,7 +384,36 @@
     <webview id="wv" src="about:blank" preload="../webview-preload.js" allowpopups></webview>
   </section>
 
+  <!-- ============ SSH 终端视图(远程交互式 shell) ============ -->
+  <section id="termView" hidden>
+    <div class="term-bar">
+      <button id="termBackBtn" class="btn ghost sm">← 控制台</button>
+      <span id="termTitle" class="mono"></span>
+      <span id="termStatusDot" class="dot" title="会话状态"></span>
+      <span class="term-bar-flex"></span>
+      <button id="termWebBtn" class="btn ghost sm icon-btn" title="切换到 pi-web 服务页(终端会话在两视图间切换时保留)" aria-label="切换到 pi-web 服务页">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="4" width="20" height="14" rx="2"></rect>
+          <path d="M8 21h8"></path>
+          <path d="M12 18v3"></path>
+        </svg>
+        <span>Pi-web</span>
+      </button>
+      <button id="termReconnectBtn" class="btn ghost sm" title="断开后重新连接 SSH 并开新会话">重连</button>
+    </div>
+    <div id="termMount"></div>
+    <div id="termHint" class="term-hint">Ctrl+V:粘贴文本;剪贴板为截图/复制的文件时,自动上传到服务器 /tmp 并把路径填入输入行</div>
+    <div id="termOverlay" hidden>
+      <div class="term-overlay-card">
+        <p id="termOverlayText">已断开</p>
+        <button id="termOverlayReconnect" class="btn primary sm">重连</button>
+      </div>
+    </div>
+  </section>
+
   <div id="toastWrap"></div>
+  <script src="vendor/xterm/xterm.js"></script>
+  <script src="vendor/xterm/addon-fit.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

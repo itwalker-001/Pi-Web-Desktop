@@ -2,6 +2,7 @@
 // 运行:node test/proxy-check.js
 'use strict';
 
+const Module = require('module');
 const proxy = require('../lib/proxy');
 
 function assert(cond, msg) {
@@ -120,6 +121,24 @@ async function main() {
     { resolveTunnel: async () => 17891 }
   );
   assert(pre.includes("https_proxy='http://127.0.0.1:17891'"), '远程前缀:localhost http 代理 → 隧道端口重写');
+
+  // 5c. 实际运行时的调用形态:回环代理、不传 opts → 走 lib/remote 的 ensureReverseTunnel。
+  //     (此前这里 const ensure 再赋值会抛 Assignment to constant variable,被调用处吞掉 → 远程 pi-web 不带代理静默启动)
+  const origLoad = Module._load;
+  const tunnelCalls = [];
+  Module._load = function (request, ...args) {
+    if (request === './remote' && args[0] && /lib[\\/]proxy\.js$/.test(args[0].filename || '')) {
+      return { ensureReverseTunnel: async (cfg, target) => { tunnelCalls.push([cfg.remote.host, target.port]); return 17895; } };
+    }
+    return origLoad.apply(this, [request, ...args]);
+  };
+  try {
+    pre = await proxy.remoteEnvPrefix({ mode: 'remote', remote: { host: '10.0.0.7', user: 'u', proxy: { enabled: true, protocol: 'http', host: '127.0.0.1', port: 7897 } } });
+  } finally {
+    Module._load = origLoad;
+  }
+  assert(pre.includes("http_proxy='http://127.0.0.1:17895'"), '远程前缀(不传 opts 的实际形态):本机代理经反向隧道,不再抛异常', pre.slice(0, 60));
+  assert(tunnelCalls.length === 1 && tunnelCalls[0][0] === '10.0.0.7' && tunnelCalls[0][1] === 7897, '反向隧道:按该服务器建立,指向本机代理端口');
 
   console.log('proxy 模块: 全部通过');
 }

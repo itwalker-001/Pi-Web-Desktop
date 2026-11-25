@@ -6,12 +6,25 @@
 
 - **两个页面**
   - **控制台页**:模式切换 / 环境检测 / 版本更新 / 服务配置与启动 / 代理与远程设置
-  - **服务页**:在 Electron 内直接使用 pi-web 的 Web UI(顶栏可返回控制台或用系统浏览器打开)
+  - **服务页**:在 Electron 内直接使用 pi-web 的 Web UI(顶栏可返回控制台、用系统浏览器打开,或**在 code-server 中打开当前项目**)
+- **在编辑器中打开当前项目**:服务页顶栏的「编辑器」按钮 —— **本机目标直接用桌面版 VS Code 打开**,远程目标用 code-server(它是**可选组件**:想用再装,不装不影响任何其它功能)。当前项目目录直接取自服务页里 pi-web 的界面(pi-web 侧边栏的当前项目行自带目录)
+  - **没装**:询问一句要不要装,选「安装」才装;安装进度写在「更新日志」里,装完自动继续打开
+  - **一键安装(远程 Linux amd64 / arm64)**:装的是 code-server 官方的独立发行包,解压到该服务器的 `~/.pi-web-desktop/code-server` —— 不需要 root、不改系统包,卸载就是删掉这个目录(下载约 270MB,解压后约 740MB,磁盘需留出约 1.2GB)。下载和查询版本号都先走该服务器自己的代理设置,不行再试直连。不用 npm:code-server 的 npm 包里嵌套着整棵 `node_modules`,npm 安装会失败
+  - **按需启动**:装了但没在运行时,点按钮才启动(与 pi-web 相同的后台方式),应用退出时回收。本来就在运行的(比如自己配的 systemd 服务)直接用,不会去动它。默认端口 8080 被别的程序占着时自动顺延到第一个空闲端口,并记在服务器上供下次沿用;自己配过监听地址的只在这一次临时顺延,不改配置文件。应用被强杀、覆盖升级时不走正常退出,启动过的实例会留在服务器上 —— 下次点按钮时直接复用并认领回来,退出时一并回收(按服务器上的 pid 文件与进程命令行判定,自己手工起的不会被误认、不会被结束)
+  - **登录密码**:窗口落到登录页时,把该服务器上 code-server 的登录密码复制到剪贴板并提示(首次启动时由 code-server 自动生成);已登录会直接进入项目,不打扰。复制以写入真正完成为准:写不进去时(比如剪贴板正被别的程序占着)直接显示密码,不会谎称已复制
+  - **地址**:「管理服务器」弹窗里的 code-server 地址是可选项。留空则经 SSH 读那台机器上 code-server 自身的监听配置(`~/.config/code-server/config.yaml` 的 `bind-addr`,没写按默认 8080);填的是「这台服务器的某个端口」时仍由本应用安装 / 按需启动;填的是反向代理下的地址或别的主机时按你填的打开,本应用不代为启动
+  - **本机目标**:直接用桌面版 VS Code 打开(找得到 `code` 命令或常见安装位置即可,已开着就复用现有实例);显式填了 code-server 地址时按填的地址开窗口;两者都没有时提示安装 VS Code 或填写地址。本机不提供 code-server 的安装 / 按需启动(其安装包不支持 Windows)
+  - 识别当前项目依赖 pi-web 界面的结构(项目行的 `data-row-key`、当前项目的 `is-current` 标记),另备两条识别路径;pi-web 改版导致都识别不到时会提示「没能识别出当前项目」,不会打开错误的目录
 - **运行模式**(本地与多台远程可同时运行,互不影响)
   - **本地模式**:在本机启动并管理 pi-web
   - **远程模式**:通过 SSH(免密 RSA 私钥认证)在远程服务器**安装与管理** pi-web,功能与本地完全一致 —— 远程环境检测、版本检测(即远程环境自身的版本)、一键更新、服务启停、服务日志、内嵌 Web UI
   - **直连访问(不做端口转发)**:远程 pi-web 以 `--hostname 0.0.0.0` 启动,内嵌页(webview)直接访问 `http://<远程主机>:<端口>`,远程防火墙需放行该端口;SSH 仅作管理通道
   - **多服务器管理**:远程连接卡片中可按 IP 创建/删除/切换多台服务器档案(`user@host` 下拉选择),每台的检测、更新、服务、日志相互独立,可各自同时运行
+- **控制台三大块**:①**Pi Web 配置**(系统服务 + 环境检测,卡内左右两栏)②**Code Server 配置**(地址 / 监听端口 / 登录密码 + 安装/更新 + 启动/停止/打开)③**代理设置**。所有卡跟随当前目标(本机 / 各远程)切换
+- **Code Server 配置卡**(远程为托管模式,本机仅地址):状态行显示未安装/已安装/运行中;**安装 / 更新**从本应用一键装官方独立发行包;**监听端口与登录密码**写入服务器 `~/.config/code-server/config.yaml`(bind-addr 固定 0.0.0.0:端口,密码留空自动生成,明文存于服务器与其自身存储方式一致);**启动/停止**按需启停,想用的端口被占自动顺延;停止非本应用启动的实例需在确认框知情后**强制结束**(宽匹配该端口上的 code-server);**打开**拉起独立窗口(落到登录页自动复制密码)。地址留空 = 本应用检测并按需启动;填反向代理等地址则按填的打开、不代为启动
+- **SSH 终端**(目标条终端按钮,仅远程):对当前远程服务器开全屏交互式终端 —— xterm.js 渲染 + 现有 SSH 连接上的 PTY 通道(复用同一套认证/指纹校验/保活),服务器零安装、零常驻端口;断线显示遮罩可一键重连,窗口尺寸自动同步。**Ctrl+V 三态**:剪贴板是文本 → 按普通粘贴;是截图/图片 → 经 SFTP 上传到服务器 `/tmp` 下的独立私有目录,并把远程路径填入输入行(不带回车,可继续编辑);是复制的文件 → 逐个上传(上限 20 个,同批重名自动加 -N 后缀,分批上传不会覆盖已有文件)
+- **终端 ↔ 服务页互切**:pi-web 服务页顶栏「终端」按钮与终端顶栏「Pi-web」按钮直接互切,**切换期间终端会话保留**(不重开 shell);「← 控制台」才是显式结束会话
+- **启动时打开**(设置里配置,所有目标共用):应用启动后自动进入 **Pi-web 服务页**(服务未就绪则等首次就绪再进)或 **SSH 终端**(仅远程),默认停在控制台
 - **两种 SSH 认证**:私钥(免密 passphrase,默认查 ~/.ssh/id_rsa、~/.ssh/id_ed25519,可指定路径)或用户名密码(含 keyboard-interactive 兜底;密码明文保存在本机配置文件)
   - 切换模式或切换服务器只更换控制台的展示与操作对象,不停止任何一方的服务;模式切换按钮上的绿点标示该模式服务是否在运行
 - **环境检测**:Node.js、npm、pi CLI、pi-web(全局包)、桌面端自身的版本,带状态指示(远程模式下检测的是远程机器)。本机与每台远程服务器**各查各的、各存各的**:检测结果按目标归档,切 Tab 立即显示该服务器自己的上次结果并在后台刷新;在途检测不会串到别的服务器,档案改了主机/用户后旧结果作废
@@ -30,7 +43,7 @@
   - 若已有**外部启动**的 pi-web(本地端口被占 / 远程端口已有服务),直接内嵌复用并标注「外部」;外部服务消失时自动感知
   - 外部实例默认不代停;点「停止」时远程模式会弹原生确认框,知情后可**强制结束**(宽匹配该端口上的 pi-web 并结束端口监听进程),本地模式仍仅提示
   - 更新前若发现外部 pi-web 占用端口(文件锁会导致 EBUSY),会明确提示先停止(或用上述强制结束)
-- **服务地址(URL)**:本地与远程统一为一个服务地址 —— 本地 `http://127.0.0.1:端口`、远程 `http://主机:端口`,服务卡实时显示并可一键复制;环境检测、版本更新、启停、内嵌页、新窗口最终都落到这个地址
+- **服务地址(URL)**:本地与远程统一为一个服务地址 —— 本地 `http://127.0.0.1:端口`、远程 `http://主机:端口`,服务卡实时显示并可一键复制;环境检测、版本更新、启停、内嵌页最终都落到这个地址
 - **孤儿进程回收**:应用被强杀/崩溃/覆盖升级时遗留的 pi-web,下次启动通过 pid 文件自动识别并回收为可停止状态(不会再被误判为「外部启动」而无法停止)。本地与远程均支持:远程按端口记录 `~/.pi-web-desktop/server-<端口>.pid`(兼容旧版共用的 `server.pid`),以「PID 存活 + 命令行确为本应用启动行」双重校验防 PID 复用误认领;SSH 管理连接意外断开不会把自有实例降级为「外部」
 - **服务管理**:端口可配置(1024–65535),支持**应用启动模式**默认设置(跟随上次 / 固定本地 / 指定某台远程)、开机自启开关、启动/停止、服务日志、浏览器打开;修改端口并保存时若服务在运行会自动重启(远程改动端口时先按旧端口停掉旧实例);停止远程服务后会复核端口确实释放,停不掉会如实报错并保持运行态
 - **主机指纹校验(TOFU)**:远程模式首次连接记录服务器公钥指纹(SHA-256),之后每次连接校验,不一致即拒绝,防范中间人
@@ -42,13 +55,21 @@ npm install
 npm start          # 启动应用
 npm run smoke      # 无界面自检:环境检测结果 + 最新版本查询
 node test/scripts-check.js        # 远程模式 stdin 脚本自检(无需 SSH)
-node test/proxy-check.js          # 代理模块自检(分协议表/迁移/三类出口/按目标取配置,离线)
+node test/const-check.js          # 静态检查:const 声明的变量不得被重新赋值(严格模式下运行到才抛错,语法检查查不出)
+node test/proxy-check.js          # 代理模块自检(分协议表/迁移/三类出口/按目标取配置/反向隧道前缀,离线)
+node test/remote-tunnel.js        # SSH 反向隧道数据通路自检(替身 ssh2 + 本机真实 TCP 服务,离线)
 node test/config-check.js         # 多服务器档案配置逻辑自检(含旧版全局代理 → 每台一份的迁移,离线)
 node test/orphan-adopt.js         # 本地孤儿回收自检(拉起→强杀模拟→认领→停止,真实本地服务)
 node test/remote-adopt.js         # 远程服务归属自检(认领/断连保持归属/停止复核,mock SSH 离线)
 node test/remote-env-cache.js     # 远程环境检测缓存自检(各服务器各查各的/各存各的,mock SSH 离线)
 node test/ipc-target.js           # IPC 按目标自检(检测按指明的目标执行;每个目标各自的代理视图,离线)
-node test/renderer-target.js      # 渲染层按目标自检(假 DOM 真加载 app.js:环境检测/代理切 Tab、晚到响应、改档案不串台)
+node test/code-server.js         # code-server 可选组件自检(地址解析/检测/安装/按需启动与回收/密码,离线)
+node test/local-editor.js         # 本机编辑器真实 CLI 自检(含空格/特殊字符路径、非零退出与启动失败)
+node test/ipc-editor.js           # IPC「code-server 打开当前项目」自检(没装→询问→安装→按需启动→登录密码,离线)
+node test/renderer-target.js      # 渲染层按目标自检(假 DOM 真加载 app.js:环境检测/代理切 Tab、晚到响应、多服务同时运行、code-server 按钮、SSH 终端)
+node test/term.js                 # SSH 终端自检(会话生命周期/断连联动/Ctrl+V 剪贴板三态/SFTP 上传与文件名 sanitize,离线)
+node test/term-runtime.js [user@host]   # SSH 终端运行时 E2E(隔离实例 + CDP 驱动 + 真实 SSH:开终端/键入回显/Ctrl+V 文本与截图上传/远端文件核对)
+node test/ui-runtime.js [user@host]     # 三大块/cs 配置卡/启动视图 运行时 E2E(隔离实例 + CDP 驱动 + 真实 SSH)
 node test/integration.js          # 本地集成测试:服务启停、外部实例识别、真实更新
 node test/remote.js user@host [--key ~/.ssh/id_rsa] [--install]   # 远程链路集成测试(需真实 SSH 服务器)
 ```
@@ -76,21 +97,27 @@ lib/
   config.js        # 配置持久化(userData/config.json)
   env.js           # 本地环境检测(node/npm/pi/pi-web)与最新版本查询
   server.js        # 本地 pi-web 服务管理:启动/停止/端口探测/外部实例识别
-  remote.js        # SSH 连接层(ssh2):远程执行、端口转发隧道、反向隧道、TOFU 指纹
+  remote.js        # SSH 连接层(ssh2):远程执行、反向隧道(远程回环端口 → 本机服务)、TOFU 指纹
+  code-server.js   # code-server 可选组件:检测 / 一键安装(官方独立发行包)/ 按需启动与退出回收 / 登录密码
   remote-env.js    # 远程环境检测与版本查询(经 SSH,stdin 脚本采集全局包信息)
   remote-server.js # 远程 pi-web 服务生命周期:nohup 启停、日志轮询、存活看门狗
-  ipc.js           # IPC handlers(config/env/update/server/shell/remote,按模式路由)
+  ipc.js           # IPC handlers(config/env/update/server/shell/remote/editor,按模式路由)
 renderer/
   index.html       # 两个页面:控制台(模式切换+远程配置) + 内嵌服务页(webview)
   style.css
   app.js           # 页面逻辑与事件(本机/各远程各自维护服务状态、检测结果与代理)
 test/
-  scripts-check.js # 远程 stdin 脚本自检
-  integration.js   # 本地集成测试
-  orphan-adopt.js  # 本地孤儿回收自检(真实本地服务)
+  scripts-check.js    # 远程 stdin 脚本自检
+  const-check.js      # 静态检查:const 不得被重新赋值
+  integration.js      # 本地集成测试
+  orphan-adopt.js     # 本地孤儿回收自检(真实本地服务)
   remote-adopt.js     # 远程服务归属自检(mock SSH,离线)
+  remote-tunnel.js    # SSH 反向隧道数据通路自检(替身 ssh2,离线)
   remote-env-cache.js # 远程环境检测缓存自检(mock SSH,离线)
   ipc-target.js       # IPC 按目标自检(离线)
+  ipc-editor.js       # IPC「code-server 打开当前项目」自检(离线)
+  code-server.js      # code-server 可选组件自检(离线)
+  helpers/fake-code-server.js # code-server 测试替身:SSH 通道应答 + 真实监听端口的假 code-server
   renderer-target.js  # 渲染层按目标自检(假 DOM,离线)
   remote.js        # 远程链路集成测试(手动,需真实服务器)
 ```
@@ -140,6 +167,7 @@ test/
       "keyPath": "~/.ssh/id_rsa.work",
       "remotePort": 30141,
       "hostFingerprint": "",
+      "codeServerUrl": "",
       "proxy": {
         "enabled": false,
         "protocol": "http",
@@ -153,6 +181,8 @@ test/
 ```
 
 `mode` 为 `local` / `remote`;`remotes` 是远程服务器档案列表(应用内「新增/删除」维护),`activeRemoteId` 指向当前操作的档案;`defaultMode`/`defaultRemoteId` 为应用启动模式默认设置(`last` 跟随上次 / `local` 固定本地 / `remote` 固定远程并激活 `defaultRemoteId` 指定的档案)。本地与所有远程服务可同时运行。`keyPath` 留空时按 `~/.ssh/id_rsa`、`~/.ssh/id_ed25519` 顺序查找;`hostFingerprint` 由应用在首次连接成功后自动写入。
+
+`codeServerUrl`(可选,本机与每个远程档案各一个)指定「编辑器」按钮远程打开的地址(code-server);留空则经 SSH 读那台服务器上 code-server 自身的监听配置(没写按 `8080`)。
 
 代理按目标各一份:顶层 `proxy` 是**本机**的代理,每个远程档案的 `proxy` 是**那台服务器**自己的(协议 `http` 涵盖 HTTPS)。v1.1.3 及更早版本的配置只有顶层一份全局代理 —— 读取时自动迁移:它成为本机的代理,每台已有服务器各继承一份,启用状态跟随当时的「远程模式也使用代理」开关。
 
@@ -179,3 +209,7 @@ ssh user@远程主机 'echo ok'             # 验证免密生效
 - **SSH 认证失败**:私钥方式确认公钥已加入远程 `~/.ssh/authorized_keys` 且私钥未设 passphrase;密码方式确认用户名密码正确、服务器未禁用密码登录(`PasswordAuthentication yes`)。
 - **主机指纹校验失败**:远程服务器重装/换 IP 后公钥变化会被拒绝;确认安全后删除配置文件中对应档案的 `hostFingerprint` 重新连接。
 - **远程找不到 node/npm/pi-web**:应用已用登录+交互 shell(`bash -ilc`)执行远程命令以加载 nvm 等 PATH;若仍失败,确认远程 `ssh user@host 'bash -ilc "node -v"'` 可用。
+- **「编辑器」按钮(远程)**:那台服务器没装 code-server 时会问要不要装(可选组件,取消即可)。一键安装下载 code-server 官方的独立发行包(约 270MB),先走该服务器自己的代理设置、不行再试直连;两边都不通会报「下载 code-server 失败」—— 确认它能访问 github.com,或在它的代理设置里配一个可用代理。不需要 root,但磁盘要留出约 1.2GB。只支持 Linux amd64 / arm64;本机目标不提供安装。装了但没在运行时,点按钮才会启动,应用退出时回收。
+- **code-server 窗口停在登录页**:密码会自动复制到剪贴板并弹出提示(该服务器 `~/.config/code-server/config.yaml` 里的 `password`),直接粘贴即可。自己装的 code-server 若监听在回环地址(`127.0.0.1`)且没在运行,本应用启动它时会改为监听 `0.0.0.0`(仅本次启动,不改配置文件);它已经在运行时则原样使用。
+- **没能从服务页识别出当前项目**:先在 pi-web 里打开一个项目;若 pi-web 改版导致识别路径全部失效,可到 [Issues](https://github.com/itwalker-001/Pi-Web-Desktop/issues) 反馈。
+- **顶栏没有「另有 N 个在运行」**:应用启动时只探测当前目标的服务状态;其它服务器(和本机)的服务要切换过去访问一次后,才会被计入。

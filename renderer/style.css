@@ -1,12 +1,12 @@
 :root {
-  --bg: #0e1320;
-  --bg-card: #161d2f;
-  --bg-input: #1c2440;
-  --border: #26304a;
-  --text: #e6ebf5;
-  --muted: #8a94ad;
-  --accent: #4f7cff;
-  --accent-hover: #6a90ff;
+  --bg: #11151d;
+  --bg-card: #191e28;
+  --bg-input: #212833;
+  --border: #343d4b;
+  --text: #edf1f4;
+  --muted: #a3adba;
+  --accent: #4679dc;
+  --accent-hover: #5b8bea;
   --danger: #e5534b;
   --ok: #3fb96a;
   --warn: #e0a83a;
@@ -18,8 +18,8 @@
   --fs-l: 15px;
   --fs-xl: 16px;
   --radius-s: 6px;
-  --radius-m: 10px;
-  --radius-l: 12px;
+  --radius-m: 6px;
+  --radius-l: 8px;
   --content-width: 1100px;
 }
 
@@ -52,7 +52,7 @@ html, body {
 /* ---------- 顶栏 ---------- */
 .topbar {
   border-bottom: 1px solid var(--border);
-  background: rgba(22, 29, 47, 0.6);
+  background: var(--bg-card);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -93,7 +93,7 @@ html, body {
 .chip-stopped { color: var(--muted); background: rgba(138, 148, 173, 0.06); }
 .chip-stopped .dot { background: var(--muted); }
 
-/* ---------- 主体：双列网格 + 底部通栏（T 字形） ---------- */
+/* ---------- 主体:三大块纵排(Pi Web 配置 / Code Server 配置 / 代理设置) ---------- */
 /* hidden 属性必须能压过 grid/flex 布局,否则页面切换不生效 */
 #consoleView[hidden] { display: none; }
 #consoleView {
@@ -101,22 +101,25 @@ html, body {
   margin: 0 auto;
   padding: 20px 24px 24px;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
+  grid-template-columns: 1fr;
+  gap: 0;
+  align-content: start;
 }
 
-.col {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+/* Pi Web 卡内部:系统服务 | 环境检测 两栏(窄窗退化为单栏) */
+.piweb-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
   min-width: 0;
 }
-
-/* 列内卡片伸展填满列高，保证两列底边对齐 */
-.col > .card {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
+.piweb-col { min-width: 0; }
+.block-sub {
+  margin: 0 0 8px;
+  font-size: var(--fs-s);
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
 
 .card {
@@ -126,6 +129,16 @@ html, body {
   border-radius: var(--radius-l);
   padding: 18px 22px;
 }
+
+#consoleView > .card {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 18px 0 22px;
+}
+#consoleView > .card:first-child { padding-top: 4px; }
+#consoleView > .card:last-child { border-bottom: 0; }
 
 /* 通栏卡片：横跨两列 */
 .card-full { grid-column: 1 / -1; }
@@ -235,14 +248,14 @@ html, body {
 .btn.danger { color: #f0b1ad; border-color: rgba(229, 83, 75, 0.5); background: transparent; }
 .btn.danger:hover:not(:disabled) { background: rgba(229, 83, 75, 0.12); border-color: rgba(229, 83, 75, 0.7); }
 
-.btn.sm { padding: 5px 12px; font-size: var(--fs-xs); }
+.btn.sm { min-height: 32px; padding: 5px 12px; font-size: var(--fs-xs); }
 
 /* ---------- 表单 ---------- */
 .form-row { display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap; margin-bottom: 12px; }
 .form-col { display: flex; flex-direction: column; gap: 12px; margin: 12px 0 4px; }
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   margin: 12px 0 4px;
 }
@@ -280,7 +293,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="password"]:foc
   background: #202a4a;
   box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.15);
 }
-input::placeholder { color: rgba(138, 148, 173, 0.65); }
+input::placeholder { color: #8f9baa; }
 
 .checkbox {
   display: inline-flex;
@@ -320,7 +333,8 @@ details[open] summary { margin-bottom: 2px; }
 
 /* ---------- 响应式：窄窗口退化为单列 ---------- */
 @media (max-width: 880px) {
-  #consoleView { grid-template-columns: 1fr; padding-top: 24px; }
+  #consoleView { padding-top: 24px; }
+  .piweb-grid { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
 }
 
@@ -577,8 +591,9 @@ body.in-web #webView { height: 100vh; }
   background: var(--bg-input);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-  padding: 7px 10px;
+  border-radius: var(--radius-m);
+  min-height: 36px;
+  padding: 7px 12px;
   font: inherit;
   font-size: var(--fs-s);
   min-width: 160px;
@@ -676,10 +691,10 @@ body.in-web #webView { height: 100vh; }
   background: rgba(5, 8, 16, 0.62);
   backdrop-filter: blur(2px);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 8vh 24px 24px;
-  z-index: 100;
+  padding: 20px 24px;
+  z-index: 110;
 }
 .modal-overlay[hidden] { display: none; }
 .modal-card {
@@ -696,7 +711,7 @@ body.in-web #webView { height: 100vh; }
 
 /* Tab 悬停操作:编辑 ✎ / 删除 ✕(仅远程 Tab) */
 .svc-tab .tab-acts { display: none; gap: 2px; margin-left: 4px; flex: none; }
-.svc-tab:hover .tab-acts { display: inline-flex; }
+.svc-tab:hover .tab-acts, .svc-tab:focus-within .tab-acts { display: inline-flex; }
 .tab-act {
   width: 22px;
   height: 22px;
@@ -836,3 +851,124 @@ body.in-web #webView { height: 100vh; }
 
 /* 服务页模式:目标切换条同样隐藏(与顶栏一致),避免 sticky 悬空出黑边 */
 body.in-web .scope-bar { display: none; }
+
+/* ---------- SSH 终端视图 ---------- */
+/* 终端模式:与 webview 同样整窗化,隐藏顶栏与目标条 */
+body.in-term .topbar { display: none; }
+body.in-term .scope-bar { display: none; }
+#termView[hidden] { display: none; }
+#termView {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+}
+.term-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+#termTitle { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-bar-flex { flex: 1; }
+#termMount { flex: 1; min-height: 0; padding: 4px 8px 0; }
+#termMount .xterm { height: 100%; }
+#termMount .xterm-viewport { background-color: var(--bg) !important; }
+.term-hint {
+  flex: none;
+  padding: 4px 12px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+/* 断开遮罩:覆盖在终端上,提供显式重连 */
+#termOverlay[hidden] { display: none; }
+#termOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  z-index: 5;
+}
+.term-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-card);
+}
+.term-overlay-card p { margin: 0; color: var(--muted); font-size: var(--fs-m); }
+
+/* 配置页控件与确认弹层 */
+#consoleView .card-head h2 { font-size: var(--fs-xl); }
+#consoleView .card-head { margin-bottom: 16px; }
+#consoleView .block-sub { color: var(--text); }
+#consoleView .env-item { border-color: var(--border); }
+#consoleView .env-status-wrap .env-status { flex-shrink: 1; }
+#consoleView .form-row .field { min-width: 0; }
+.modal-card .field { min-width: 0; }
+.modal-card .field input { width: 100%; min-width: 0; }
+.modal-card .remote-picker { min-width: 0; flex-wrap: wrap; }
+#consoleView .piweb-grid .form-row { gap: 12px; }
+#consoleView .piweb-grid .form-row .field:first-child { flex: 1 1 170px; }
+#consoleView .piweb-grid .form-row .field:not(:first-child) { flex: 0 1 180px; }
+#consoleView .piweb-grid .form-row input { width: 100%; min-width: 0; }
+#consoleView input[type="text"],
+#consoleView input[type="number"],
+#consoleView input[type="password"],
+#consoleView select,
+#consoleView textarea,
+.remote-picker select {
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+}
+#consoleView input:disabled { color: var(--muted); opacity: 0.8; }
+#consoleView input:hover:not(:disabled),
+#consoleView select:hover,
+#consoleView textarea:hover { border-color: #627084; }
+#consoleView input:focus-visible,
+#consoleView select:focus-visible,
+#consoleView textarea:focus-visible,
+.remote-picker select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(70, 121, 220, 0.24);
+}
+.btn, .svc-icon, .svc-tab, .env-act-icon { font-family: inherit; }
+.btn { min-height: 36px; padding: 7px 14px; }
+.btn.sm { min-height: 32px; padding: 5px 12px; }
+.btn:focus-visible, .svc-icon:focus-visible, .svc-tab:focus-visible,
+.env-act-icon:focus-visible, .tab-act:focus-visible {
+  outline: 2px solid #9abaff;
+  outline-offset: 2px;
+}
+.scope-bar .svc-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.scope-bar .svc-tab { flex: none; }
+.confirm-overlay { z-index: 120; }
+.confirm-card { width: min(440px, 100%); padding: 24px; overflow-wrap: anywhere; }
+.confirm-heading { display: flex; align-items: center; gap: 12px; }
+.confirm-heading h2 { margin: 0; font-size: var(--fs-xl); font-weight: 600; }
+.confirm-mark {
+  display: grid; place-items: center; flex: none;
+  width: 32px; height: 32px;
+  border: 1px solid rgba(70, 121, 220, 0.45);
+  border-radius: var(--radius-m);
+  background: rgba(70, 121, 220, 0.13);
+  color: #9abaff; font-weight: 700;
+}
+.confirm-mark.danger { border-color: rgba(229, 83, 75, 0.45); background: rgba(229, 83, 75, 0.12); color: #ffb2ad; }
+.confirm-message { margin: 18px 0 8px; line-height: 1.55; }
+.confirm-detail { margin: 0; color: var(--muted); font-size: var(--fs-s); line-height: 1.6; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 26px; }
+.btn.danger-solid { background: #b83232; border-color: #b83232; color: #fff; }
+.btn.danger-solid:hover:not(:disabled) { background: #d34141; border-color: #d34141; }
