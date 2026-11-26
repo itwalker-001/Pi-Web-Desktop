@@ -117,6 +117,7 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
     copyOk: true,
   };
   const timers = []; // setTimeout 的时长参数(验证提示停留多久)
+  const warns = []; // console.warn(增强项加载失败时的原因)
   let inflight = 0;
 
   // code-server 配置卡的桩:reply 是 csState 的返回(默认已安装、未运行、托管)
@@ -132,28 +133,54 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
   // SSH 终端:xterm 替身 + term:* 调用记录(验证渲染层发起的真实调用形态)
   const terminals = []; // startTermSession 创建的 FakeTerminal
   const termCalls = []; // 渲染层发起的 term:*
-  const term = { pasteReply: { ok: true, type: 'text', text: '' } }; // termPaste 的应答
+  const term = { pasteReply: { ok: true, type: 'text', text: '' }, startReply: null, ctorThrows: false }; // termPaste / termStart 的应答;ctorThrows 让 xterm 构造失败
+  const openedLinks = []; // 交给系统浏览器打开的地址
+  // xterm addon 替身:每个实例都记进 addons.created;addons.webglThrows 模拟拿不到 WebGL 上下文;
+  // addons.fail = 某个 kind 时,该 addon 在 activate 时抛错
+  const addons = { created: [], webglThrows: false, fail: '' };
+  class FakeAddon {
+    constructor(kind) { this.kind = kind; this.disposed = false; addons.created.push(this); }
+    activate() {
+      if (addons.fail === this.kind) throw new Error(`boom ${this.kind}`);
+    }
+    dispose() { this.disposed = true; }
+  }
   class FakeTerminal {
     constructor(opts) {
+      if (term.ctorThrows) throw new Error('xterm boom'); // 模拟 xterm 自身初始化失败
       this.opts = opts;
       this.options = { theme: opts && opts.theme }; // xterm 支持运行时改主题
+      this.unicode = { activeVersion: '6' }; // 真实 xterm 默认是 6 版宽度表
       this.cols = 80;
       this.rows = 24;
       this.display = '';
       this.pasted = [];
+      this.addons = [];
       this.disposed = false;
       terminals.push(this);
     }
-    loadAddon(a) { this.addon = a; }
+    // 与真实 xterm 一致:loadAddon 时激活;paste 最终也走 onData(程序开着括号粘贴模式时内容外面包一层标记)
+    loadAddon(a) { this.addons.push(a); if (a.activate) a.activate(this); }
     open() {}
     focus() {}
     write(s) { this.display += s; }
-    paste(s) { this.pasted.push(s); }
+    paste(s) { this.pasted.push(s); if (this.dataCb) this.dataCb(s); }
     dispose() { this.disposed = true; }
     onData(cb) { this.dataCb = cb; }
     attachCustomKeyEventHandler(cb) { this.keyHandler = cb; }
   }
   const FitAddonStub = { FitAddon: class { activate() {} fit() {} dispose() {} } };
+  const Unicode11AddonStub = { Unicode11Addon: class extends FakeAddon { constructor() { super('unicode11'); } } };
+  const WebLinksAddonStub = { WebLinksAddon: class extends FakeAddon { constructor(handler) { super('web-links'); this.handler = handler; } } };
+  const WebglAddonStub = {
+    WebglAddon: class extends FakeAddon {
+      constructor() {
+        super('webgl');
+        if (addons.webglThrows) throw new Error('WebGL2 not supported null'); // 真实 addon 拿不到上下文时就这样抛
+      }
+      onContextLoss(cb) { this.lossCb = cb; }
+    },
+  };
 
   const identityOf = (t) => {
     if (t.mode !== 'remote') return '';
@@ -197,7 +224,8 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
   };
 
   const sandbox = {
-    console, document, setTimeout: (...a) => { timers.push(a[1]); return setTimeout(...a); }, clearTimeout, setInterval, clearInterval,
+    console: Object.assign({}, console, { warn: (...a) => warns.push(a.map((x) => String((x && x.message) || x)).join(' ')) }), // warn 记下来断言,不刷屏
+    document, setTimeout: (...a) => { timers.push(a[1]); return setTimeout(...a); }, clearTimeout, setInterval, clearInterval,
     fetch: async () => { throw new Error('offline'); },
     AbortSignal, URL, URLSearchParams, TextDecoder,
     confirm: () => true,
@@ -206,6 +234,9 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
     ResizeObserver: class { observe() {} disconnect() {} },
     Terminal: FakeTerminal,
     FitAddon: FitAddonStub,
+    Unicode11Addon: Unicode11AddonStub,
+    WebLinksAddon: WebLinksAddonStub,
+    WebglAddon: WebglAddonStub,
     piApi: {
       getConfig: async () => withViews(cfg),
       setConfig: async (patch) => {
@@ -214,6 +245,7 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
         Object.assign(cfg, p);
         return withViews(cfg);
       },
+      openExternal: async (url) => { openedLinks.push(url); return { ok: true }; },
       detectEnv: (t) => respond('detect', t || { mode: cfg.mode, remoteId: cfg.activeRemoteId }),
       checkUpdate: (t) => respond('check', t || { mode: cfg.mode, remoteId: cfg.activeRemoteId }),
       serverState: async () => ({ running: !!behavior.serverUrl, owned: true, external: false, url: behavior.serverUrl || '' }),
@@ -224,7 +256,11 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
       installCodeServer: async () => { editor.installs += 1; return editor.installReply; },
       copyText: async (text) => { editor.copied.push(text); return { ok: editor.copyOk }; },
       runUpdate: async () => ({ ok: false, error: '(测试中不执行更新)' }),
-      termStart: async (arg) => { termCalls.push({ api: 'start', arg }); return { ok: true, id: 't-1', mode: 'remote', remoteId: (arg && arg.target && arg.target.remoteId) || '' }; },
+      termStart: async (arg) => {
+        termCalls.push({ api: 'start', arg });
+        // startReply 可带会话事实(proxy / proxyError / tmux / tmuxVersion),与主进程 term:start 的返回同构
+        return clone(term.startReply || { ok: true, id: 't-1', mode: 'remote', remoteId: (arg && arg.target && arg.target.remoteId) || '' });
+      },
       termWrite: async (arg) => { termCalls.push({ api: 'write', arg }); return { ok: true }; },
       termResize: async (arg) => { termCalls.push({ api: 'resize', arg }); return { ok: true }; },
       termStop: async (arg) => { termCalls.push({ api: 'stop', arg }); return { ok: true }; },
@@ -255,6 +291,7 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
   };
   return {
     ctx, cfg, behavior, calls, starts, editorOpens, editor, timers, hooks, document, settle, termCalls, terminals, term, cs, csCalls,
+    openedLinks, addons, warns,
     S: (expr) => vm.runInContext(expr, ctx),
     el: (id) => document.getElementById(id),
   };
@@ -636,7 +673,7 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   appC.hooks.updateLog({ target: 'pi-web', line: 'npm install\n' });
   check(C("getLogText('update')").includes('[code-server] 下载中 3.2%\n') && !C("getLogText('update')").includes('[Pi Web] [code-server]'), 'T12k 「更新日志」里 code-server 的行带自己的标签,不会被标成 Pi Web');
 
-  // T13) SSH 终端:入口开关、真实调用形态、Ctrl+V 三态、断开与回收
+  // T13) SSH 终端:入口开关、真实调用形态、Alt+V 三态、断开与回收
   const app2 = boot({ mode: 'remote', activeRemoteId: 'A' });
   await app2.settle();
   check(app2.el('termOpenBtn').disabled === false, 'T13 远程模式:终端入口可用');
@@ -655,14 +692,20 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   await app2.settle();
   check(t0.display === '你好', 'T13 会话输出写入 xterm(UTF-8 解码)', t0.display);
   app2.term.pasteReply = { ok: true, type: 'text', text: 'hello' };
-  check(t0.keyHandler({ type: 'keydown', ctrlKey: true, key: 'v' }) === false, 'T13 Ctrl+V 被拦截(不再走默认粘贴)');
+  check(t0.keyHandler({ type: 'keydown', ctrlKey: true, key: 'v' }) === true, 'T13 Ctrl+V 不再拦截(原样发给终端,^V 归里层程序)');
+  check(t0.keyHandler({ type: 'keydown', ctrlKey: true, altKey: true, key: 'v' }) === true, 'T13 AltGr(Ctrl+Alt)+V 不拦截(欧洲键盘布局)');
+  check(t0.keyHandler({ type: 'keydown', altKey: true, shiftKey: true, key: 'v' }) === true, 'T13 Alt+Shift+V 不拦截');
+  await app2.settle();
+  check(t0.pasted.length === 0 && app2.termCalls.every((c) => c.api !== 'paste'), 'T13 Ctrl+V 不触发剪贴板仲裁(不读剪贴板、不上传)', app2.termCalls);
+  check(t0.keyHandler({ type: 'keydown', altKey: true, key: 'v' }) === false, 'T13 Alt+V 被拦截(智能粘贴/上传)');
   await app2.settle();
   check(t0.pasted.length === 1 && t0.pasted[0] === 'hello', 'T13 文本剪贴板:按普通粘贴进终端', t0.pasted);
   app2.term.pasteReply = { ok: true, type: 'uploaded', paths: ['/tmp/pi-paste-1.png', '/tmp/my file.png'] };
-  t0.keyHandler({ type: 'keydown', ctrlKey: true, key: 'v' });
+  t0.keyHandler({ type: 'keydown', altKey: true, key: 'v' });
   await app2.settle();
   const w2 = app2.termCalls.filter((c) => c.api === 'write').pop();
   check(!!w2 && w2.arg.data === "/tmp/pi-paste-1.png '/tmp/my file.png'", 'T13 上传完成:远程路径填入输入行(含空格的加引号)', w2 && w2.arg.data);
+  check(t0.pasted[t0.pasted.length - 1] === "/tmp/pi-paste-1.png '/tmp/my file.png'", 'T13 上传路径经 xterm 的 paste 送入(程序开着括号粘贴模式时会被识别为粘贴,而不是逐字键入)', t0.pasted);
   // 返回控制台:会话停止、xterm 释放
   app2.el('termBackBtn')._l.click[0]();
   await app2.settle();
@@ -762,6 +805,171 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   await appT3.settle();
   const th3 = appT3.terminals[0].opts.theme;
   check(th3.background === '#fdf6e3' && th3.brightGreen === '#586e75', 'T17 新预设生效且带 ANSI 16 色(solarized-light)', JSON.stringify(th3).slice(0, 120));
+
+  // T18) 终端增强:addon 装配 / Unicode 11 宽度表 / 链接(Ctrl+单击走系统浏览器)/ Shift+Enter 换行 /
+  //      WebGL 不可用与丢上下文的回退 / 会话事实的提示 / 会话类开关
+  const appU = boot({ mode: 'remote', activeRemoteId: 'A' });
+  await appU.settle();
+  appU.el('termOpenBtn')._l.click[0]();
+  await appU.settle();
+  const tU = appU.terminals[0];
+  const addonOf = (t, kind) => (t.addons || []).find((a) => a.kind === kind);
+  const writesOf = (app) => app.termCalls.filter((c) => c.api === 'write');
+  check(tU.addons.map((a) => a.kind || 'fit').join(',') === 'fit,unicode11,web-links,webgl', 'T18 新会话依次装 fit → unicode11 → web-links → webgl', tU.addons.map((a) => a.kind || 'fit').join(','));
+  check(tU.unicode.activeVersion === '11' && tU.opts.rescaleOverlappingGlyphs === true, 'T18 宽度表切到 Unicode 11,并开启超宽字形缩放', `${tU.unicode.activeVersion} / ${tU.opts.rescaleOverlappingGlyphs}`);
+  check(tU.opts.allowProposedApi === true, 'T18 终端开启 allowProposedApi(切换宽度表的 term.unicode 是提议中接口,不开则访问即抛错 → 会话都建不起来)', tU.opts.allowProposedApi);
+  addonOf(tU, 'web-links').handler({ ctrlKey: false }, 'https://example.com/plain-click');
+  check(appU.openedLinks.length === 0, 'T18 链接:没按修饰键的单击不打开(在链接上双击选词不会误开网页)', appU.openedLinks);
+  addonOf(tU, 'web-links').handler({ ctrlKey: true }, 'https://example.com/a?b=1');
+  check(appU.openedLinks.length === 1 && appU.openedLinks[0] === 'https://example.com/a?b=1', 'T18 链接:Ctrl+单击 → 交给系统浏览器打开(openExternal),不走 window.open', appU.openedLinks);
+  const writesBefore = writesOf(appU).length;
+  check(tU.keyHandler({ type: 'keydown', key: 'Enter', shiftKey: true }) === false, 'T18 Shift+Enter 被映射(不再当作 Enter)');
+  await appU.settle();
+  const newlineWrite = writesOf(appU).pop();
+  check(writesOf(appU).length === writesBefore + 1 && !!newlineWrite && newlineWrite.arg.data === '\x1b\r' && newlineWrite.arg.id === 't-1', 'T18 Shift+Enter 发的是换行序列 Esc+CR', newlineWrite && newlineWrite.arg);
+  check(
+    tU.keyHandler({ type: 'keydown', key: 'Enter' }) === true &&
+      tU.keyHandler({ type: 'keydown', key: 'Enter', shiftKey: true, ctrlKey: true }) === true &&
+      tU.keyHandler({ type: 'keydown', key: 'Enter', shiftKey: true, altKey: true }) === true &&
+      tU.keyHandler({ type: 'keydown', key: 'Enter', shiftKey: true, metaKey: true }) === true &&
+      tU.keyHandler({ type: 'keyup', key: 'Enter', shiftKey: true }) === true,
+    'T18 普通 Enter、带 Ctrl/Alt/Meta 的 Enter、keyup 都不受影响'
+  );
+  await appU.settle();
+  check(writesOf(appU).length === writesBefore + 1, 'T18 上面这些组合不产生额外写入');
+  check(tU.keyHandler({ type: 'keypress', key: 'Enter', shiftKey: true }) === false, 'T18 Shift+Enter 的 keypress 也被拦(否则 xterm 会再发一个 \\r:换了行还把内容提交了)');
+  check(tU.keyHandler({ type: 'keypress', key: 'Enter' }) === true, 'T18 普通 Enter 的 keypress 不受影响');
+  await appU.settle();
+  check(writesOf(appU).length === writesBefore + 1, 'T18 keypress 被拦且不重复发送换行序列');
+  check(appU.el('termHint').textContent === 'Alt+V:粘贴;截图/文件自动上传到 /tmp 并填入路径', 'T18 终端提示只有 Alt+V 一条', appU.el('termHint').textContent);
+  addonOf(tU, 'webgl').lossCb();
+  check(addonOf(tU, 'webgl').disposed === true && tU.disposed === false && appU.termCalls.filter((c) => c.api === 'stop').length === 0, 'T18 WebGL 上下文丢失:只卸渲染器,终端实例与会话保留');
+
+  // WebGL 拿不到上下文(构造即抛):清掉残留画布,会话照常建立
+  const appU4 = boot({ mode: 'remote', activeRemoteId: 'A' });
+  appU4.addons.webglThrows = true;
+  await appU4.settle();
+  const strayCanvases = [makeEl('canvas'), makeEl('canvas')];
+  const removedCanvases = [];
+  strayCanvases.forEach((c) => (c.remove = () => removedCanvases.push(c)));
+  appU4.el('termMount').querySelectorAll = () => strayCanvases.slice();
+  appU4.el('termOpenBtn')._l.click[0]();
+  await appU4.settle();
+  check(
+    !!appU4.terminals[0] && addonOf(appU4.terminals[0], 'webgl') === undefined && removedCanvases.length === 2 &&
+      appU4.termCalls.filter((c) => c.api === 'start').length === 1 && appU4.el('termOverlay').hidden === true,
+    'T18 WebGL 不可用:不装渲染器、清掉残留画布,终端照常建立',
+    `${appU4.terminals.length} / ${removedCanvases.length}`
+  );
+  check(appU4.terminals[0].unicode.activeVersion === '11' && !!addonOf(appU4.terminals[0], 'web-links'), 'T18 WebGL 不可用时,宽度表与链接不受影响');
+  check(appU4.warns.some((w) => /^WebGL 渲染器不可用,已回退到内置渲染器: WebGL2 not supported null$/.test(w)), 'T18 WebGL 不可用:原因写进 console.warn(可诊断,不刷屏)', JSON.stringify(appU4.warns));
+
+  // 某一项增强加载时抛错:只丢这一项,终端照常建立,其余增强仍在
+  const appU7 = boot({ mode: 'remote', activeRemoteId: 'A' });
+  appU7.addons.fail = 'unicode11';
+  await appU7.settle();
+  appU7.el('termOpenBtn')._l.click[0]();
+  await appU7.settle();
+  const tU7 = appU7.terminals[0];
+  check(
+    !!tU7 && appU7.termCalls.filter((c) => c.api === 'start').length === 1 && appU7.el('termOverlay').hidden === true &&
+      tU7.unicode.activeVersion === '6' && !!addonOf(tU7, 'web-links') && !!addonOf(tU7, 'webgl'),
+    'T18 宽度表加载失败:只丢这一项,会话照常建立,链接与 WebGL 仍在',
+    JSON.stringify([!!tU7, tU7 && tU7.addons.map((a) => a.kind || 'fit')])
+  );
+  check(appU7.warns.some((w) => /^Unicode 11 宽度表未能启用: boom unicode11$/.test(w)), 'T18 宽度表加载失败:原因写进 console.warn', JSON.stringify(appU7.warns));
+  appU7.el('termBackBtn')._l.click[0]();
+  await appU7.settle();
+
+  // xterm 自身初始化失败:不留一片空白,遮罩上给出原因,也不发起会话
+  const appU8 = boot({ mode: 'remote', activeRemoteId: 'A' });
+  appU8.term.ctorThrows = true;
+  await appU8.settle();
+  appU8.el('termOpenBtn')._l.click[0]();
+  await appU8.settle();
+  check(
+    appU8.el('termView').hidden === false && appU8.el('termOverlay').hidden === false &&
+      appU8.el('termOverlayText').textContent === '终端初始化失败:xterm boom' && appU8.termCalls.length === 0,
+    'T18 xterm 初始化抛错:遮罩给出原因(不留空白),不发起会话',
+    appU8.el('termOverlayText').textContent
+  );
+  appU8.el('termBackBtn')._l.click[0]();
+  await appU8.settle();
+  check(appU8.el('consoleView').hidden === false, 'T18 初始化失败后仍可返回控制台');
+
+  // 会话事实与断线提示不能承诺已有任务的环境或存活状态。
+  check(appU.el('termStatusDot').title === '会话状态' && appU.el('termBackBtn').title === '返回控制台', 'T18 普通会话:状态点与返回按钮是默认说明');
+  const appU2 = boot({ mode: 'remote', activeRemoteId: 'A' });
+  await appU2.settle();
+  appU2.term.startReply = { ok: true, id: 't-1', mode: 'remote', remoteId: 'A', proxy: true, tmux: 'on', tmuxVersion: 'tmux 3.4' };
+  appU2.el('termOpenBtn')._l.click[0]();
+  await appU2.settle();
+  check(/已继承这台服务器的代理设置/.test(appU2.el('termStatusDot').title) && /tmux 3\.4/.test(appU2.el('termStatusDot').title) && /需重连确认/.test(appU2.el('termBackBtn').title), 'T18 继承了代理且在 tmux 里:状态点与返回按钮如实说明', `${appU2.el('termStatusDot').title} | ${appU2.el('termBackBtn').title}`);
+  appU2.hooks.termExit({ id: 't-1', reason: 'disconnected' });
+  await appU2.settle();
+  check(/可能保留.*需重连确认/.test(appU2.el('termOverlayText').textContent) && !/仍在|即可恢复/.test(appU2.el('termOverlayText').textContent), 'T18 保活会话断线:不保证任务存活,需重连确认', appU2.el('termOverlayText').textContent);
+  appU2.term.startReply = { ok: true, id: 't-2', mode: 'remote', remoteId: 'A', proxy: null, tmux: 'on', tmuxAttached: true, proxyRetained: true };
+  appU2.el('termReconnectBtn')._l.click[0]();
+  await appU2.settle();
+  check(appU2.S('termState.facts.proxy') === null && /保留原环境.*代理状态未知/.test(appU2.el('termStatusDot').title) && !/已继承/.test(appU2.el('termStatusDot').title), 'T18 附着已有会话:状态未知,保留原环境而非本次代理设置', appU2.el('termStatusDot').title);
+  check(appU2.el('toastWrap').children.some((c) => /本次设置不会更改已有任务/.test(c.textContent)), 'T18 附着提示不承诺环境更改生效');
+  appU2.hooks.termExit({ id: 't-2', reason: 'closed' });
+  await appU2.settle();
+  check(appU2.el('termOverlayText').textContent === '终端通道已关闭;任务状态需重连确认', 'T18 closed 与断线区分,不保证程序存活', appU2.el('termOverlayText').textContent);
+  appU.hooks.termExit({ id: 't-1', reason: 'disconnected' });
+  await appU.settle();
+  check(appU.el('termOverlayText').textContent === 'SSH 连接已断开', 'T18 普通会话断线:遮罩文案不变', appU.el('termOverlayText').textContent);
+  // 服务退出事件(SSH 管理连接断开时主进程也会发)不该把正在用终端的人切回控制台:
+  // 否则「已断开」遮罩和「重连」按钮都落在看不见的视图里,用户只能自己摸回终端
+  appU.hooks.serverExited({ mode: 'remote', remoteId: 'A', code: 0, intentional: true });
+  await appU.settle();
+  check(
+    appU.el('termView').hidden === false && appU.el('consoleView').hidden === true && appU.document.body._classes.has('in-term') && !appU.terminals[0].disposed,
+    'T18 终端里收到 server:exited:留在终端视图(遮罩与重连可见),不被切回控制台,会话也不销毁',
+    JSON.stringify([appU.el('termView').hidden, appU.el('consoleView').hidden])
+  );
+  appU.el('termBackBtn')._l.click[0]();
+  await appU.settle();
+  check(appU.el('consoleView').hidden === false, 'T18 之后手动返回控制台照常');
+  const appU3 = boot({ mode: 'remote', activeRemoteId: 'A' });
+  await appU3.settle();
+  appU3.term.startReply = { ok: true, id: 't-1', mode: 'remote', remoteId: 'A', proxy: false, proxyError: '反向隧道建立失败', tmux: 'missing', tmuxVersion: '' };
+  appU3.el('termOpenBtn')._l.click[0]();
+  await appU3.settle();
+  const toastsU3 = appU3.el('toastWrap').children.map((c) => c.textContent);
+  check(
+    !!appU3.terminals[0] && !appU3.terminals[0].disposed &&
+      toastsU3.includes('这台服务器没有安装 tmux,本次会话不支持断线保活') &&
+      toastsU3.includes('代理设置未能带入终端:反向隧道建立失败'),
+    'T18 代理注入失败、服务器没装 tmux:各提示一条,会话照常建立',
+    JSON.stringify(toastsU3)
+  );
+  check(appU3.el('termStatusDot').title === '会话状态', 'T18 没继承成代理、没进 tmux:状态点不谎报', appU3.el('termStatusDot').title);
+
+  // 会话类开关:回显 / 保存与提示 / 关闭后 Shift+Enter 不再映射 / 旧配置缺字段时按默认
+  const appU5 = boot({ mode: 'remote', activeRemoteId: 'A', termShiftEnter: false, termProxy: false, termTmux: true });
+  await appU5.settle();
+  check(appU5.el('termShiftEnterCheck').checked === false && appU5.el('termProxyCheck').checked === false && appU5.el('termTmuxCheck').checked === true, 'T18 设置卡回显三个会话开关');
+  appU5.el('termOpenBtn')._l.click[0]();
+  await appU5.settle();
+  check(appU5.el('termHint').textContent === 'Alt+V:粘贴;截图/文件自动上传到 /tmp 并填入路径', 'T18 关闭换行映射:提示保持 Alt+V 一条(Shift+Enter 不写进提示)', appU5.el('termHint').textContent);
+  const writesU5 = writesOf(appU5).length;
+  check(appU5.terminals[0].keyHandler({ type: 'keydown', key: 'Enter', shiftKey: true }) === true && appU5.terminals[0].keyHandler({ type: 'keypress', key: 'Enter', shiftKey: true }) === true, 'T18 关闭换行映射:Shift+Enter(keydown 与 keypress)交回 xterm 默认处理(等同 Enter)');
+  await appU5.settle();
+  check(writesOf(appU5).length === writesU5, 'T18 关闭换行映射:不写换行序列');
+  appU5.el('termProxyCheck').checked = true;
+  appU5.el('termSaveBtn')._l.click[0]();
+  await appU5.settle();
+  const cfgU5 = appU5.S('state').cfg;
+  const toastsU5 = () => appU5.el('toastWrap').children.map((c) => c.textContent);
+  check(cfgU5.termProxy === true && cfgU5.termShiftEnter === false && cfgU5.termTmux === true, 'T18 保存:三个开关原样落盘', JSON.stringify([cfgU5.termShiftEnter, cfgU5.termProxy, cfgU5.termTmux]));
+  check(toastsU5().slice(-1)[0] === '终端配置已保存;环境设置仅用于新建会话,附着已有 tmux 会话会保留原环境', 'T18 保存不承诺重新打开已有会话会改变环境', toastsU5().slice(-1)[0]);
+  appU5.el('termSaveBtn')._l.click[0](); // 没再改开关
+  await appU5.settle();
+  check(toastsU5().slice(-1)[0] === '终端配置已保存', 'T18 开关没变:普通保存提示', toastsU5().slice(-1)[0]);
+  const appU6 = boot({ mode: 'remote', activeRemoteId: 'A' });
+  await appU6.settle();
+  check(appU6.el('termShiftEnterCheck').checked === true && appU6.el('termProxyCheck').checked === true && appU6.el('termTmuxCheck').checked === false, 'T18 旧配置没有这些字段:按默认回显(换行开、继承代理开、保活关)');
 
   // T19) 无边框窗口:探测到窗口控制叠加才给 body 打 .wco(样式据此让顶栏可拖拽、给窗口按钮让位)
   const appW = boot({ mode: 'local' }, { wco: true });

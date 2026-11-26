@@ -1,7 +1,9 @@
 'use strict';
 
-// 从新的 SVG 母版生成软件 ICO / PNG 及 Pi Web 显示图。
-// 源文件的 viewBox 已收紧留白;直接用 Chromium 渲染,保留透明背景、路径和遮罩。
+// 从 SVG 母版生成软件图标(ICO / 各尺寸 PNG)。源文件的 viewBox 已收紧留白,直接用 Chromium 渲染。
+// 两份星耀标志各管一处:
+//   build/pi-icon-dark.svg(深色底)= 软件图标:exe、快捷方式、任务栏、窗口左上角用的 build/icon.ico;
+//   build/pi-icon.svg(透明底)= 界面里的品牌 Logo(顶栏、服务页工具栏),不进 ICO。
 // 运行:npx electron scripts/build-icon.js
 const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
@@ -10,7 +12,7 @@ const path = require('path');
 const SIZES = [256, 128, 64, 48, 32, 24, 16];
 const ROOT = path.join(__dirname, '..');
 
-// 分别渲染软件与 Pi Web 图标:第一扇离屏窗口关闭后不要提前退出应用。
+// 离屏窗口关掉后不要走默认的退出流程,等文件都写完再 app.exit()。
 app.on('window-all-closed', () => {});
 
 function buildIco(pngs) {
@@ -54,7 +56,7 @@ async function renderSvg(file) {
 
 app.whenReady().then(async () => {
   try {
-    const display = await renderSvg(path.join(ROOT, 'build', 'pi-icon.svg'));
+    const display = await renderSvg(path.join(ROOT, 'build', 'pi-icon-dark.svg'));
     fs.mkdirSync(path.join(ROOT, 'build', 'icons'), { recursive: true });
     const pngs = SIZES.map(size => {
       const buf = display.resize({ width: size, height: size, quality: 'best' }).toPNG();
@@ -62,9 +64,7 @@ app.whenReady().then(async () => {
       return { size, buf };
     });
     fs.writeFileSync(path.join(ROOT, 'build', 'icon.ico'), buildIco(pngs));
-    const web = await renderSvg(path.join(ROOT, 'renderer', 'vendor', 'icons', 'pi-web.svg'));
-    fs.writeFileSync(path.join(ROOT, 'renderer', 'vendor', 'icons', 'pi-web-display.png'), web.resize({ width: 128, height: 128, quality: 'best' }).toPNG());
-    console.log('[build-icon] OK: SVG → ' + SIZES.join('/') + ' PNG + icon.ico + Pi Web显示图');
+    console.log('[build-icon] OK: ' + SIZES.join('/') + ' PNG + icon.ico');
     app.exit(0);
   } catch (error) {
     console.error('[build-icon] FAIL:', error);

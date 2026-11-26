@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, session, Menu } = require('electron');
+const { app, BrowserWindow, session, Menu, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -131,6 +131,14 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'), frameless ? { query: { wco: '1' } } : {});
+
+  // 主渲染层自己不开新窗口:页面里的 window.open 一律拦下,http(s) 链接交给系统浏览器(终端里的链接走
+  // shell:open,这里是兜底)。不拦的话 Electron 会新开一个继承了 preload 的窗口 —— 任何网页都能拿到 piApi。
+  // 内嵌的 webview 是另一套 webContents,不受这里影响(它默认就禁止弹窗)
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
 
   // GPU 初始化失败(如 VMware 下 MESA 加载失败)时 ready-to-show 可能永不触发,
   // 窗口会以 show:false 状态滞留并占住单实例锁。按时间分级处理:

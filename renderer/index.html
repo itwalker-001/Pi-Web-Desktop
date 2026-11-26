@@ -281,8 +281,17 @@
           <div class="term-preview-body mono">&gt;_</div>
         </div>
       </div>
+      <!-- 会话类开关:改的是「新开的会话怎么起」,对已经在跑的会话不生效 -->
+      <div class="field term-switches">
+        <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-code"></use></svg>终端会话(所有目标共用;对新开的会话生效)</span>
+        <div class="switch-row">
+          <label class="switch"><input type="checkbox" id="termShiftEnterCheck" /><span>Shift+Enter 在输入框内换行(Claude Code 等)</span></label>
+          <label class="switch"><input type="checkbox" id="termProxyCheck" /><span>继承这台服务器的代理设置</span></label>
+          <label class="switch"><input type="checkbox" id="termTmuxCheck" /><span>断线保活(服务器需装有 tmux)</span></label>
+        </div>
+      </div>
       <div class="proxy-foot">
-        <span class="muted hint"><svg class="icon" aria-hidden="true"><use href="#i-info"></use></svg><span id="termCfgHint">终端主题保存即生效(已打开的终端热切换);「启动时打开」决定应用启动后自动进入 Pi Web 服务页或 SSH 终端,每次运行只自动打开一次。</span></span>
+        <span class="muted hint"><svg class="icon" aria-hidden="true"><use href="#i-info"></use></svg><span id="termCfgHint">终端主题保存即生效(已打开的终端热切换);「启动时打开」决定应用启动后自动进入 Pi Web 服务页或 SSH 终端,每次运行只自动打开一次;会话设置用于新建 shell;附着已有 tmux 会话时保留原环境,改代理需结束旧会话后新建。</span></span>
         <button id="termSaveBtn" class="btn primary"><svg class="icon" aria-hidden="true"><use href="#i-floppy"></use></svg>保存配置</button>
       </div>
     </section>
@@ -461,7 +470,8 @@
       <button id="termReconnectBtn" class="btn ghost sm tool-btn" title="断开后重新连接 SSH 并开新会话"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg><span>重连</span></button>
     </div>
     <div id="termMount"></div>
-    <div id="termHint" class="term-hint">Ctrl+V:粘贴文本;剪贴板为截图/复制的文件时,自动上传到服务器 /tmp 并把路径填入输入行</div>
+    <!-- 快捷键提示由 renderTermHint() 按配置生成(Shift+Enter 可关) -->
+    <div id="termHint" class="term-hint"></div>
     <div id="termOverlay" hidden>
       <div class="term-overlay-card">
         <p id="termOverlayText">已断开</p>
@@ -473,6 +483,9 @@
   <div id="toastWrap"></div>
   <script src="vendor/xterm/xterm.js"></script>
   <script src="vendor/xterm/addon-fit.js"></script>
+  <script src="vendor/xterm/addon-unicode11.js"></script>
+  <script src="vendor/xterm/addon-web-links.js"></script>
+  <script src="vendor/xterm/addon-webgl.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

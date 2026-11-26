@@ -600,6 +600,15 @@ select:disabled { color: var(--muted); opacity: 0.55; cursor: not-allowed; }
 .term-preview-bar i:nth-child(2) { background: #FEBC2E; }
 .term-preview-bar i:nth-child(3) { background: #28C840; }
 .term-preview-body { padding: 8px var(--gap-3) 0; font-size: var(--fs-l); color: var(--text); }
+/* 终端会话开关:勾选框 + 文字,一行排开、放不下就折行 */
+.term-switches { margin-top: var(--gap-3); }
+.switch-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1) var(--gap-6); min-height: var(--ctrl-h); }
+.switch {
+  display: inline-flex; align-items: center; gap: var(--gap-2);
+  min-height: 28px; color: var(--text); font-size: var(--fs-s); cursor: pointer; user-select: none;
+}
+.switch input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.switch:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-s); }
 
 /* 协议 | 服务器 | 端口 | Registry 一行排开 */
 .proxy-table { grid-template-columns: minmax(130px, 1.1fr) minmax(0, 2fr) minmax(110px, 1fr) minmax(0, 2.6fr); }

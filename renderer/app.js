@@ -840,7 +840,7 @@ function showConsole() {
   $('consoleView').hidden = false;
 }
 
-/* ---------------- SSH 终端(远程交互式 shell,Ctrl+V 上传 /tmp) ---------------- */
+/* ---------------- SSH 终端(远程交互式 shell,Alt+V 上传 /tmp) ---------------- */
 
 // 单会话模型:一次只有一个终端会话,关闭视图即停止会话;重连 = 销毁旧会话再开新的
 const termState = {
@@ -849,10 +849,15 @@ const termState = {
   decoder: null,      // 流式 UTF-8 解码(防多字节被数据块边界截断)
   id: '',             // 当前会话 id(主进程 term.js 维护)
   target: null,       // 会话对应的目标({ mode, remoteId, identity })
+  facts: null,        // 会话的实际形态({ proxy, tmux, tmuxVersion }),主进程开会话时带回
   resizeTimer: 0,
   resizeObserver: null,
-  pasting: false,     // Ctrl+V 处理中(上传耗时,防重入)
+  pasting: false,     // Alt+V 处理中(上传耗时,防重入)
 };
+
+// 输入框内换行的按键序列(Esc+CR):Claude Code 等程序识别为「换行不提交」,与 Alt+Enter 发出的相同。
+// 普通 shell 只是丢弃它,所以映射 Shift+Enter 没有副作用
+const TERM_NEWLINE = '\x1b\r';
 
 // 需要引号才安全时用单引号包住(与主进程 remote.js 的 shellQuote 同规则)
 function termShellQuote(p) {
@@ -865,6 +870,7 @@ function showTerm() {
   $('consoleView').hidden = true;
   $('webView').hidden = true;
   $('termView').hidden = false;
+  renderTermHint();
   refreshServerState(); // 进入终端即核对 pi-web 服务状态(可能已在别处启停)
 }
 
@@ -894,9 +900,11 @@ function destroyTerm() {
   termState.fit = null;
   termState.decoder = null;
   termState.target = null;
+  termState.facts = null;
   $('termMount').innerHTML = '';
   $('termOverlay').hidden = true;
   setDot('termStatusDot', '');
+  renderTermFacts();
 }
 
 function showTermDisconnected(msg) {
@@ -923,7 +931,17 @@ async function openTerm() {
     return;
   }
   showTerm();
-  await startTermSession(t);
+  await startTermSafely(t);
+}
+
+// 会话初始化本身出错(xterm 或 addon 抛异常)也要让用户看到原因,而不是留一片空白、什么提示都没有。
+// 2026-11-26 实测:term.unicode 未开 allowProposedApi 时访问即抛错,若不兜住界面就是一片空白
+async function startTermSafely(t) {
+  try {
+    await startTermSession(t);
+  } catch (err) {
+    showTermDisconnected(`终端初始化失败:${String((err && err.message) || err)}`);
+  }
 }
 
 // 终端会话是否仍是该目标的活跃会话(互切时直接复用)
@@ -1062,11 +1080,31 @@ async function startTermSession(t) {
     cursorBlink: true,
     scrollback: 5000,
     theme: termThemeOf(),
+    // 字形比它占的格数还宽时缩进格内(WebGL 渲染器用;DOM 渲染器没有这项)
+    rescaleOverlappingGlyphs: true,
+    // 切换宽度表用的 term.unicode 在 xterm 里仍是「提议中」的接口:不开这项,访问它直接抛错
+    allowProposedApi: true,
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open($('termMount'));
   fit.fit();
+  // 下面三项是增强,逐项兜底:任何一项出问题都不该让终端开不出来
+  // Unicode 11 宽度表:emoji 按两格排。xterm 默认的表把 emoji 算作一格,而实际字形约两格多,中文混排时
+  // 会压住后面的字;Claude Code / pi 自己排版也按两格算,两边一致才不会在行尾错位
+  try {
+    term.loadAddon(new Unicode11Addon.Unicode11Addon());
+    term.unicode.activeVersion = '11';
+  } catch (err) {
+    console.warn('Unicode 11 宽度表未能启用:', err);
+  }
+  // 输出里的链接 → 系统浏览器打开(必须给 handler:xterm 默认用 window.open)
+  try {
+    term.loadAddon(new WebLinksAddon.WebLinksAddon(openTermLink));
+  } catch (err) {
+    console.warn('终端链接识别未能启用:', err);
+  }
+  loadTermRenderer(term);
 
   termState.term = term;
   termState.fit = fit;
@@ -1086,19 +1124,37 @@ async function startTermSession(t) {
   }
   termState.id = res.id;
   termState.target = t;
+  termState.facts = {
+    proxy: res.proxy === null || res.tmuxAttached || res.proxyRetained ? null : !!res.proxy,
+    tmuxAttached: !!res.tmuxAttached,
+    proxyRetained: !!res.proxyRetained,
+    tmux: res.tmux === 'on' || res.tmux === 'missing' ? res.tmux : 'off',
+    tmuxVersion: String(res.tmuxVersion || ''),
+  };
   setDot('termStatusDot', 'ok');
+  renderTermFacts();
+  // 想继承代理却没成、想保活但服务器没装 tmux:如实说明原因,会话照常可用
+  if (termState.facts.tmuxAttached || termState.facts.proxyRetained) {
+    toast('已附着已有 tmux 会话,保留原环境;当前代理状态未知,本次设置不会更改已有任务', 'ok', 6000);
+  } else if (res.proxyError) toast(`代理设置未能带入终端:${res.proxyError}`, 'err', 6000);
+  if (termState.facts.tmux === 'missing') toast('这台服务器没有安装 tmux,本次会话不支持断线保活', 'err', 6000);
 
   // 键入 → PTY。粘贴的文本也走这里(xterm 的 paste 是输入语义)
-  term.onData((data) => {
-    if (termState.id) window.piApi.termWrite({ id: termState.id, data }).catch(() => {});
-  });
+  term.onData(sendTermInput);
 
-  // Ctrl+V 拦截:剪贴板是截图/文件 → 上传 /tmp 后把远程路径填入输入行;是文本 → 按普通粘贴
   term.attachCustomKeyEventHandler((e) => {
-    if (
-      e.type === 'keydown' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey &&
-      String(e.key).toLowerCase() === 'v'
-    ) {
+    // Shift+Enter → 换行序列。xterm 默认把它发成与 Enter 相同的 \r,程序无从区分只能当提交;
+    // 只在配置开启时映射(在 vim 这类程序里 Esc+Enter 的含义会变,用户可以关掉)。
+    // keydown 与 keypress 都要拦:只拦 keydown 的话,xterm 仍会处理浏览器随后派发的 keypress 再发一个 \r,
+    // 结果是换了行还把内容提交了
+    if ((e.type === 'keydown' || e.type === 'keypress') && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Enter') {
+      if (state.cfg && state.cfg.termShiftEnter === false) return true;
+      if (e.type === 'keydown') sendTermInput(TERM_NEWLINE);
+      return false;
+    }
+    if (e.type !== 'keydown') return true;
+    // Alt+V 智能粘贴(截图/文件上传 /tmp 并填路径,文本按普通粘贴);Ctrl+V 放行,^V 原样给里层程序
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && String(e.key).toLowerCase() === 'v') {
       handleTermPaste();
       return false;
     }
@@ -1121,6 +1177,52 @@ async function startTermSession(t) {
   termState.resizeObserver.observe($('termMount'));
 }
 
+// 键盘 / 粘贴 / 快捷键映射产生的输入 → PTY(会话已结束时丢弃)
+function sendTermInput(data) {
+  if (termState.id) window.piApi.termWrite({ id: termState.id, data }).catch(() => {});
+}
+
+// 终端里 Ctrl(⌘)+单击链接 → 系统浏览器打开。要求按住修饰键:直接单击只当普通点击(定位光标、双击选词),
+// 否则在链接上双击选个词也会把网页打开。地址交给主进程 shell:open,它只放行 http(s)
+function openTermLink(e, uri) {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  window.piApi.openExternal(uri).catch(() => {});
+}
+
+// WebGL 渲染器:拿不到上下文(显卡驱动、--disable-gpu 自愈模式、远程桌面)时 loadAddon 会抛错;
+// 上下文丢失时 addon 会发通知 —— 两种情况都把 addon 卸掉,xterm 随即恢复自带的 DOM 渲染器,终端照常可用
+function loadTermRenderer(term) {
+  try {
+    const webgl = new WebglAddon.WebglAddon();
+    webgl.onContextLoss(() => {
+      try { webgl.dispose(); } catch {}
+    });
+    term.loadAddon(webgl);
+  } catch (err) {
+    console.warn('WebGL 渲染器不可用,已回退到内置渲染器:', err);
+    // 初始化中途失败时可能已经往页面里放了画布,清掉免得挡住回退后的渲染
+    $('termMount').querySelectorAll('.xterm-screen > canvas').forEach((c) => c.remove());
+  }
+}
+
+// 状态点与「← 控制台」的说明文字:带出这个会话的实际形态(有没有继承代理、是否在 tmux 里)
+function renderTermFacts() {
+  const f = termState.facts;
+  const notes = [];
+  if (f && (f.tmuxAttached || f.proxyRetained)) notes.push('已有 tmux 会话保留原环境,代理状态未知;本次设置不会更改已有任务');
+  else if (f && f.proxy === true) notes.push('已继承这台服务器的代理设置');
+  if (f && f.tmux === 'on') {
+    notes.push(`会话保活已开启(${f.tmuxVersion || 'tmux'}):断线后任务可能保留,需重连确认`);
+  }
+  $('termStatusDot').title = notes.length ? notes.join(';') : '会话状态';
+  $('termBackBtn').title = f && f.tmux === 'on' ? '返回控制台(保留终端连接;断线后任务是否保留需重连确认)' : '返回控制台';
+}
+
+// 终端底部的快捷键提示
+function renderTermHint() {
+  $('termHint').textContent = 'Alt+V:粘贴;截图/文件自动上传到 /tmp 并填入路径';
+}
+
 async function handleTermPaste() {
   if (!termState.id || termState.pasting) return;
   const { id, term, target } = termState;
@@ -1136,9 +1238,10 @@ async function handleTermPaste() {
       if (res.text && termState.term) termState.term.paste(res.text);
       return;
     }
-    // 上传完成:把远程路径作为键入内容填进当前输入行(不带回车,可继续编辑或接参数)
+    // 上传完成:把远程路径粘贴进当前输入行(不带回车,可继续编辑或接参数)。走 xterm 的 paste 而不是直接写入:
+    // 程序开着括号粘贴模式时,它会把这段内容识别为「粘贴」而不是逐字键入
     if (termState.term && res.paths && res.paths.length) {
-      await window.piApi.termWrite({ id: termState.id, data: res.paths.map(termShellQuote).join(' ') }).catch(() => {});
+      termState.term.paste(res.paths.map(termShellQuote).join(' '));
       toast(`已上传到 /tmp:${res.paths.join(' ')}`, 'ok', 5000);
     }
   } finally {
@@ -1147,7 +1250,7 @@ async function handleTermPaste() {
 }
 
 function reconnectTerm() {
-  startTermSession(curTarget());
+  startTermSafely(curTarget());
 }
 
 /* ---------------- 在 code-server 中打开当前项目 ---------------- */
@@ -1516,6 +1619,10 @@ function fillConfigForm(cfg) {
   $('registryInput').value = cfg.registry || '';
   $('startupViewSelect').value = ['web', 'term'].includes(cfg.startupView) ? cfg.startupView : '';
   $('termThemeSelect').value = TERM_THEMES[cfg.termTheme] ? cfg.termTheme : 'auto';
+  // 会话类开关:旧配置里没有这些字段时按默认(换行开、代理继承开、保活关)
+  $('termShiftEnterCheck').checked = cfg.termShiftEnter !== false;
+  $('termProxyCheck').checked = cfg.termProxy !== false;
+  $('termTmuxCheck').checked = !!cfg.termTmux;
   fillProxyForm();
   fillCodeServerForm();
   fillRemoteForm(activeRemote());
@@ -1828,18 +1935,31 @@ async function saveConfig() {
   );
 }
 
-// 终端配置卡:终端主题 + 启动时打开(所有目标共用);主题对已打开的终端热切换
+// 终端配置卡:终端主题 + 启动时打开 + 会话类开关(所有目标共用);主题对已打开的终端热切换,
+// 其余改的是「新开的会话怎么起」,已在运行的会话不变
 async function saveTermConfig() {
+  const before = state.cfg || {};
+  const session = {
+    termShiftEnter: $('termShiftEnterCheck').checked,
+    termProxy: $('termProxyCheck').checked,
+    termTmux: $('termTmuxCheck').checked,
+  };
   const cfg = await window.piApi.setConfig({
     termTheme: TERM_THEMES[$('termThemeSelect').value] ? $('termThemeSelect').value : 'auto',
     startupView: ['web', 'term'].includes($('startupViewSelect').value) ? $('startupViewSelect').value : '',
+    ...session,
   });
   state.cfg = cfg;
   state.remotes = cfg.remotes || [];
+  renderTermHint();
   if (termState.term) {
     try { termState.term.options.theme = termThemeOf(); } catch {}
   }
-  toast('终端配置已保存', 'ok');
+  const sessionChanged =
+    (before.termShiftEnter !== false) !== session.termShiftEnter ||
+    (before.termProxy !== false) !== session.termProxy ||
+    !!before.termTmux !== session.termTmux;
+  toast(sessionChanged ? '终端配置已保存;环境设置仅用于新建会话,附着已有 tmux 会话会保留原环境' : '终端配置已保存', 'ok');
 }
 
 // 端口在 Tab 上改动即保存(change 触发);运行中自动重启
@@ -1994,7 +2114,11 @@ function bindEvents() {
   window.piApi.onTermExit((info) => {
     if (!info || info.id !== termState.id) return;
     termState.id = '';
-    showTermDisconnected(info.reason === 'stopped' ? '会话已关闭' : 'SSH 连接已断开');
+    const kept = !!(termState.facts && termState.facts.tmux === 'on');
+    showTermDisconnected(
+      info.reason === 'stopped' ? '会话已关闭' : info.reason === 'closed' ? '终端通道已关闭;任务状态需重连确认' :
+        kept ? 'SSH 连接已断开;tmux 任务可能保留,需重连确认' : 'SSH 连接已断开'
+    );
   });
 
   // 日志弹窗
@@ -2048,7 +2172,9 @@ function bindEvents() {
     else state.servers.local = defaultServer();
     renderServer();
     if (!isCurrent) return;
-    showConsole();
+    // 终端是独立视图(只跟目标,不跟 pi-web 服务):SSH 断开或服务退出都不该把人从终端里拽出来 ——
+    // 终端自己会显示「已断开 / 重连」遮罩。其余视图照旧切回控制台看日志
+    if (!document.body.classList.contains('in-term')) showConsole();
     if (!info.intentional) {
       toast(
         info.reason === 'disconnect'

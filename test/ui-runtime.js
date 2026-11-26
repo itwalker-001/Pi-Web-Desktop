@@ -97,7 +97,8 @@ async function main() {
   await withTimeout(
     (async () => {
       for (let i = 0; i < 80; i++) {
-        if (await ev("!document.getElementById('termView').hidden && !!document.querySelector('#termMount .xterm') && document.querySelectorAll('#termMount .xterm-rows > div').length > 0")) return;
+        // 会话建立即算打开(WebGL 渲染器下页面里没有行节点,不能再数 .xterm-rows)
+        if (await ev("!!document.getElementById('termView') && !document.getElementById('termView').hidden && !!document.querySelector('#termMount .xterm') && typeof termState === 'object' && !!(termState.term && termState.id)")) return;
         await sleep(500);
       }
       throw new Error('终端未随启动打开');
