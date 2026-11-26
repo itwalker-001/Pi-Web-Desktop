@@ -105,13 +105,17 @@ async function applySessionProxy(cfg) {
 }
 
 function createWindow() {
+  // Windows:藏掉系统标题栏(与应用顶栏重复),由应用顶栏充当可拖拽的标题栏;
+  // 最小化/最大化/关闭用系统原生的「窗口控制叠加」放在右上角,贴靠布局、双击最大化等窗口行为照旧。
+  // height 须与 style.css 里 body.wco 的 --topbar-h 一致;颜色对应顶栏背景 --bg 与 --text(样式里的 token 改了这里要跟着改)
+  const frameless = process.platform === 'win32';
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 820,
     minWidth: 920,
     minHeight: 640,
     title: 'Pi Web Desktop',
-    backgroundColor: '#0e1320',
+    backgroundColor: '#101318',
     icon: path.join(__dirname, 'build', 'icon.ico'),
     show: false,
     webPreferences: {
@@ -120,9 +124,13 @@ function createWindow() {
       nodeIntegration: false,
       webviewTag: true,
     },
+    // 无边框的决定随页面地址带给渲染层(?wco=1):页面脚本一执行就能同步拿到,第一帧布局即正确
+    ...(frameless
+      ? { titleBarStyle: 'hidden', titleBarOverlay: { color: '#101318', symbolColor: '#e6edf5', height: 40 } }
+      : {}),
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'), frameless ? { query: { wco: '1' } } : {});
 
   // GPU 初始化失败(如 VMware 下 MESA 加载失败)时 ready-to-show 可能永不触发,
   // 窗口会以 show:false 状态滞留并占住单实例锁。按时间分级处理:

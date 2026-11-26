@@ -75,7 +75,7 @@ const BASE_CFG = {
 
 // 起一个「应用实例」:真实加载 renderer/app.js;piApi 的检测按目标返回带编号的结果(编号 = 主机末段,
 // 本机为 L),behavior[kind][目标] 可注入 delay / fail / installed
-function boot(cfgOverrides = {}) {
+function boot(cfgOverrides = {}, { wco = false } = {}) {
   const els = new Map();
   const document = {
     body: makeEl('body'),
@@ -136,6 +136,7 @@ function boot(cfgOverrides = {}) {
   class FakeTerminal {
     constructor(opts) {
       this.opts = opts;
+      this.options = { theme: opts && opts.theme }; // xterm 支持运行时改主题
       this.cols = 80;
       this.rows = 24;
       this.display = '';
@@ -198,9 +199,9 @@ function boot(cfgOverrides = {}) {
   const sandbox = {
     console, document, setTimeout: (...a) => { timers.push(a[1]); return setTimeout(...a); }, clearTimeout, setInterval, clearInterval,
     fetch: async () => { throw new Error('offline'); },
-    AbortSignal, URL, TextDecoder,
+    AbortSignal, URL, URLSearchParams, TextDecoder,
     confirm: () => true,
-    location: { href: 'file:///C:/app/renderer/index.html' },
+    location: { href: 'file:///C:/app/renderer/index.html', search: wco ? '?wco=1' : '' }, // 无边框窗口:主进程把决定随地址带来
     getComputedStyle: () => ({ getPropertyValue: () => '' }),
     ResizeObserver: class { observe() {} disconnect() {} },
     Terminal: FakeTerminal,
@@ -215,7 +216,7 @@ function boot(cfgOverrides = {}) {
       },
       detectEnv: (t) => respond('detect', t || { mode: cfg.mode, remoteId: cfg.activeRemoteId }),
       checkUpdate: (t) => respond('check', t || { mode: cfg.mode, remoteId: cfg.activeRemoteId }),
-      serverState: async () => ({ running: false, owned: true, external: false, url: behavior.serverUrl || '' }),
+      serverState: async () => ({ running: !!behavior.serverUrl, owned: true, external: false, url: behavior.serverUrl || '' }),
       serverStart: async () => { starts.push(cfg.activeRemoteId || 'local'); return { ok: true, url: 'http://started/' }; },
       serverStop: async () => ({ ok: true, stopped: true }),
       openInEditor: async (dir) => { editorOpens.push(dir); return editor.reply(dir); },
@@ -235,7 +236,7 @@ function boot(cfgOverrides = {}) {
       csStop: async (arg) => { csCalls.stop.push(clone(arg)); return clone(cs.stopReply || { ok: true, ours: 1 }); },
       csConfirmForceStop: async () => clone(cs.confirmReply || { confirmed: false }),
       csOpen: async () => clone(cs.openReply || { ok: true, url: 'http://10.0.0.1:8080' }),
-      onUpdateLog(cb) { hooks.updateLog = cb; }, onCodeServerPassword(cb) { hooks.codeServerPassword = cb; }, onServerLog() {}, onServerExited() {},
+      onUpdateLog(cb) { hooks.updateLog = cb; }, onCodeServerPassword(cb) { hooks.codeServerPassword = cb; }, onServerLog() {}, onServerExited(cb) { hooks.serverExited = cb; },
       onServerStarted(cb) { hooks.serverStarted = cb; }, onPasteResult() {},
       onTermData(cb) { hooks.termData = cb; }, onTermExit(cb) { hooks.termExit = cb; },
     },
@@ -490,7 +491,7 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   setPage({ reject: true });
   n = opened();
   await S('openCurrentProjectInEditor')();
-  check(editorOpens.length === n && lastToast() === '没能从服务页识别出当前项目,请先在 pi-web 中打开一个项目', 'T10k 服务页还没加载好/不是 pi-web:如实提示,不打开', lastToast());
+  check(editorOpens.length === n && lastToast() === '没能从服务页识别出当前项目,请先在 Pi Web 中打开一个项目', 'T10k 服务页还没加载好/不是 Pi Web:如实提示,不打开', lastToast());
 
   app.editor.reply = async () => ({ ok: false, error: '远程 10.0.0.9 上没有找到 code-server(未安装,或不在该用户的 PATH 里);也可以在服务器配置里填写 code-server 地址' });
   setPage({ primary: '/home/walker/proj-a' });
@@ -633,7 +634,7 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   appC.hooks.updateLog({ target: 'code-server', line: '下载中 3.2%\n' });
   appC.hooks.updateLog({ target: 'pi', line: 'npm install\n' });
   appC.hooks.updateLog({ target: 'pi-web', line: 'npm install\n' });
-  check(C("getLogText('update')").includes('[code-server] 下载中 3.2%\n') && !C("getLogText('update')").includes('[pi-web] [code-server]'), 'T12k 「更新日志」里 code-server 的行带自己的标签,不会被标成 pi-web');
+  check(C("getLogText('update')").includes('[code-server] 下载中 3.2%\n') && !C("getLogText('update')").includes('[Pi Web] [code-server]'), 'T12k 「更新日志」里 code-server 的行带自己的标签,不会被标成 Pi Web');
 
   // T13) SSH 终端:入口开关、真实调用形态、Ctrl+V 三态、断开与回收
   const app2 = boot({ mode: 'remote', activeRemoteId: 'A' });
@@ -692,6 +693,7 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   await app4.settle();
   const t4 = app4.terminals[0];
   check(app4.termCalls.filter((c) => c.api === 'start').length === 1, 'T14 打开终端:一次 termStart');
+  check(app4.el('termWebBtn').disabled === false, 'T14 pi-web 运行中:终端的「Pi-web」按钮可选');
   app4.el('termWebBtn')._l.click[0](); // 终端 → 服务页
   await app4.settle();
   check(app4.el('webView').hidden === false && app4.el('termView').hidden === true && !t4.disposed && app4.termCalls.filter((c) => c.api === 'stop').length === 0, 'T14 切到服务页:终端会话保留(不 stop、不 dispose)');
@@ -705,12 +707,18 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   app4.el('termBackBtn')._l.click[0](); // 返回控制台 = 显式结束
   await app4.settle();
   check(t4.disposed && app4.termCalls.filter((c) => c.api === 'stop').length === 1 && app4.el('termView').hidden === true, 'T14 返回控制台:会话结束');
-  // 服务页里点「终端」而服务未启动:留在服务页并提示
+  // pi-web 未运行:终端的「Pi-web」按钮置灰(tooltip 说明原因),不是点了才提示;服务启停时按钮跟着变
   const app4b = boot({ mode: 'remote', activeRemoteId: 'A' });
-  app4b.behavior.serverUrl = '';
   await app4b.settle();
-  app4b.el('termWebBtn'); // (元素存在即可,未开终端时无处点)
-  check(app4b.el('termWebBtn') && true, 'T14 (信息)终端工具栏的 Pi-web 按钮已存在');
+  app4b.el('termOpenBtn')._l.click[0]();
+  await app4b.settle();
+  check(app4b.el('termWebBtn').disabled === true && /未运行/.test(app4b.el('termWebBtn').title), 'T14 pi-web 未运行:终端的「Pi-web」按钮置灰,tooltip 说明原因', app4b.el('termWebBtn').title);
+  app4b.hooks.serverStarted({ mode: 'remote', remoteId: 'A', url: 'http://10.0.0.1:30141' });
+  await app4b.settle();
+  check(app4b.el('termWebBtn').disabled === false, 'T14 终端开着时服务启动:按钮随之变为可选');
+  app4b.hooks.serverExited({ mode: 'remote', remoteId: 'A', code: 0, intentional: true });
+  await app4b.settle();
+  check(app4b.el('termWebBtn').disabled === true, 'T14 服务停止:按钮随之置灰');
 
   // T15) 启动时打开:SSH 终端 / Pi-web 服务页(服务就绪后首次打开)
   const app5 = boot({ mode: 'remote', activeRemoteId: 'A', startupView: 'term' });
@@ -730,6 +738,37 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   const app8 = boot({ mode: 'local', startupView: 'term' });
   await app8.settle();
   check(app8.el('consoleView').hidden === false && app8.terminals.length === 0, 'T15 本机 + startupView=term:不打开终端,停在控制台');
+
+  // T17) 终端主题:配置预设 / 新会话生效 / 保存即热切换
+  const appT = boot({ mode: 'remote', activeRemoteId: 'A', termTheme: 'dracula' });
+  await appT.settle();
+  appT.el('termOpenBtn')._l.click[0]();
+  await appT.settle();
+  const tT = appT.terminals[0];
+  check(!!tT && tT.opts.theme && tT.opts.theme.background === '#282a36', 'T17 termTheme=dracula:新会话用该主题', tT && tT.opts.theme);
+  check(appT.el('termThemeSelect').value === 'dracula', 'T17 设置卡回显当前主题');
+  appT.el('termThemeSelect').value = 'light';
+  appT.el('termSaveBtn')._l.click[0]();
+  await appT.settle();
+  check(appT.S('state').cfg.termTheme === 'light' && tT.options.theme && tT.options.theme.background === '#f6f8fa', 'T17 终端配置卡保存:主题落盘且活会话立即切换', JSON.stringify(tT.options.theme));
+  const appT2 = boot({ mode: 'remote', activeRemoteId: 'A' });
+  await appT2.settle();
+  appT2.el('termOpenBtn')._l.click[0]();
+  await appT2.settle();
+  check(appT2.terminals[0].opts.theme.background === '#0e1320', 'T17 默认 auto:主题取应用色板', appT2.terminals[0].opts.theme.background);
+  const appT3 = boot({ mode: 'remote', activeRemoteId: 'A', termTheme: 'solarized-light' });
+  await appT3.settle();
+  appT3.el('termOpenBtn')._l.click[0]();
+  await appT3.settle();
+  const th3 = appT3.terminals[0].opts.theme;
+  check(th3.background === '#fdf6e3' && th3.brightGreen === '#586e75', 'T17 新预设生效且带 ANSI 16 色(solarized-light)', JSON.stringify(th3).slice(0, 120));
+
+  // T19) 无边框窗口:探测到窗口控制叠加才给 body 打 .wco(样式据此让顶栏可拖拽、给窗口按钮让位)
+  const appW = boot({ mode: 'local' }, { wco: true });
+  await appW.settle();
+  const appW2 = boot({ mode: 'local' });
+  await appW2.settle();
+  check(appW.document.body._classes.has('wco') === true && appW2.document.body._classes.has('wco') === false, 'T19 窗口控制叠加:有则 body.wco,没有则不打');
 
   // T16) Code Server 配置卡:状态渲染/按钮可用性/保存/启停/外部实例确认
   const app9 = boot({ mode: 'remote', activeRemoteId: 'A' });
@@ -865,7 +904,98 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   await pendingPaste;
   check(!app12.termCalls.some((c) => c.api === 'write' && c.arg.data === '/tmp/old-upload'), 'T18 关闭后到达的上传结果不会写入其他终端');
 
-  console.log(failed ? `\n${failed} 项失败` : '\n渲染层按目标状态(环境检测 + 代理 + code-server 配置卡 + 多服务同时运行 + SSH 终端): 全部通过');
+  // T20) Pi Web 操作行(重启 / 访问 / 复制)与按钮的运行态互斥:
+  //   重启 = 先停再启,没停成功(外部实例 / 停止失败)就不叠加启动;访问 = 探活后进服务页,不重复启动;复制 = 写剪贴板并提示
+  const app13 = boot({ mode: 'local' });
+  await app13.settle();
+  const svcCalls = [];
+  app13.ctx.piApi.serverStop = async () => { svcCalls.push('stop'); return { ok: true, stopped: true }; };
+  app13.ctx.piApi.serverStart = async () => { svcCalls.push('start'); return { ok: true, url: 'http://restarted/' }; };
+  const setLocalRunning = (on) => app13.S(on
+    ? "state.servers.local = { running: true, owned: true, external: false, url: 'http://before/' }; renderServer(); 0"
+    : 'state.servers.local = defaultServer(); renderServer(); 0');
+  const toast13 = () => app13.el('toastWrap').children.slice(-1)[0];
+  setLocalRunning(true);
+  check(app13.el('startBtn').disabled === true && app13.el('stopBtn').disabled === false && app13.el('restartBtn').disabled === false && app13.el('openPageBtn').disabled === false, 'T20 服务运行中:启动置灰,停止 / 重启 / 访问可用');
+  setLocalRunning(false);
+  check(app13.el('startBtn').disabled === false && app13.el('stopBtn').disabled === true && app13.el('restartBtn').disabled === true && app13.el('openPageBtn').disabled === true, 'T20 服务已停止:启动可用,停止 / 重启 / 访问置灰');
+  app13.el('restartBtn')._l.click[0](); // 按钮本就不可点:即使处理器被调到也不该做任何事
+  await app13.settle();
+  check(svcCalls.length === 0, 'T20 服务已停止时重启:不发任何请求', svcCalls.join(','));
+  setLocalRunning(true);
+  app13.el('restartBtn')._l.click[0]();
+  await app13.settle();
+  check(svcCalls.join(',') === 'stop,start' && app13.S('curServer')().url === 'http://restarted/', 'T20 重启:先停止再启动,结果是重新启动后的服务', svcCalls.join(','));
+  app13.S('showConsole(); 0');
+  for (const [name, reply] of [['外部实例', { external: true }], ['停止失败', { error: '端口占用,停止失败' }]]) {
+    svcCalls.length = 0;
+    setLocalRunning(true);
+    app13.ctx.piApi.serverStop = async () => { svcCalls.push('stop'); return reply; };
+    app13.el('restartBtn')._l.click[0]();
+    await app13.settle();
+    check(svcCalls.join(',') === 'stop' && app13.S('curServer')().running === true, `T20 重启但没停掉(${name}):不再启动,服务保持运行`, svcCalls.join(','));
+  }
+  // 重启在途时不能切目标、改连接档案 / 端口或重复启停;整个 stop + start 都持锁。
+  const app14 = boot({ mode: 'remote', activeRemoteId: 'A' });
+  await app14.settle();
+  app14.S("state.servers.remotes.A = { running: true, owned: true, url: 'http://A/' }; renderServer(); 0");
+  const restartCalls = [];
+  let finishStop, finishStart;
+  app14.ctx.piApi.serverStop = () => {
+    restartCalls.push('stop:' + app14.cfg.activeRemoteId);
+    return new Promise((resolve) => { finishStop = resolve; });
+  };
+  app14.ctx.piApi.serverStart = () => {
+    restartCalls.push('start:' + app14.cfg.activeRemoteId);
+    return new Promise((resolve) => { finishStart = resolve; });
+  };
+  const restarting = app14.S('restartServer')();
+  const beforeProfiles = JSON.stringify(app14.cfg.remotes);
+  for (const expr of ["switchTarget('B')", "switchTarget('local', { force: true })", "addRemote()", "delRemote('A')", "editRemote('B')", "selectRemote('B')", 'saveCurrentRemote()', 'testRemote()', 'saveLocalPort()', 'saveRemotePort()', 'startServer()', 'stopServer()', 'restartServer()', 'runUpdate()']) {
+    await app14.S(expr);
+  }
+  check(app14.cfg.activeRemoteId === 'A' && app14.S('state.activeRemoteId') === 'A' && JSON.stringify(app14.cfg.remotes) === beforeProfiles && restartCalls.join(',') === 'stop:A', 'T20 重启停止阶段锁住目标、档案、端口与并发操作', restartCalls.join(','));
+  check(app14.el('restartBtn').disabled && app14.el('stopBtn').disabled, 'T20 重启期间禁用启停按钮');
+  finishStop({ ok: true, stopped: true });
+  await sleep(0);
+  await app14.S("switchTarget('B')");
+  check(app14.cfg.activeRemoteId === 'A' && restartCalls.join(',') === 'stop:A,start:A', 'T20 重启启动阶段仍锁住原目标', restartCalls.join(','));
+  finishStart({ ok: true, url: 'http://A/restarted' });
+  await restarting;
+  check(!app14.S('restartingServer') && app14.S('curServer')().url === 'http://A/restarted', 'T20 重启完成释放锁并归档原目标');
+  await app14.S("switchTarget('B')");
+  check(app14.cfg.activeRemoteId === 'B', 'T20 重启后可以正常切换目标');
+  app14.S("state.servers.remotes.B = { running: true, owned: true, url: 'http://B/' }; 0");
+  app14.ctx.piApi.serverStop = async () => { throw new Error('stop rejected'); };
+  let rejected = false;
+  try { await app14.S('restartServer')(); } catch { rejected = true; }
+  check(rejected && !app14.S('restartingServer'), 'T20 IPC 异常也在 finally 中释放重启锁');
+  app14.ctx.piApi.serverStop = async () => ({ external: true });
+  const cancelledRestart = app14.S('restartServer')();
+  await sleep(0);
+  app14.el('confirmCancelBtn')._l.click[0]();
+  await cancelledRestart;
+  check(!app14.S('restartingServer') && app14.S('curServer')().running && restartCalls.join(',') === 'stop:A,start:A', 'T20 外部实例确认取消后释放锁、不启动');
+  // 访问:运行中 → 探活后进入服务页,不重复启动
+  svcCalls.length = 0;
+  app13.ctx.fetch = async () => ({ ok: true });
+  app13.el('openPageBtn')._l.click[0]();
+  await app13.settle();
+  check(svcCalls.length === 0 && app13.el('webView').hidden === false && app13.el('webUrl').textContent === 'http://before/', 'T20 访问:服务运行中直接进入服务页,不重复启动', `${svcCalls.join(',')} / ${app13.el('webUrl').textContent}`);
+  app13.S('showConsole(); 0');
+  // 复制:写剪贴板 + 提示;空值不复制;失败时提示里带上可手动复制的内容
+  const copied = [];
+  app13.ctx.piApi.copyText = async (text) => { copied.push(text); return { ok: true }; };
+  app13.el('portInput').value = '30141';
+  app13.el('svcHost').value = '';
+  await app13.S("copyFieldValue('portInput', '端口')");
+  await app13.S("copyFieldValue('svcHost', '主机地址')");
+  check(copied.join('|') === '30141' && /已复制端口:30141/.test(toast13().textContent) && toast13().className === 'toast ok', 'T20 复制:写入剪贴板并提示;空值不复制', JSON.stringify(copied));
+  app13.ctx.piApi.copyText = async () => ({ ok: false });
+  await app13.S("copyFieldValue('portInput', '端口')");
+  check(/复制失败[\s\S]*30141/.test(toast13().textContent) && toast13().className === 'toast err', 'T20 复制失败:提示里带上可手动复制的内容', toast13().textContent);
+
+  console.log(failed ? `\n${failed} 项失败` : '\n渲染层按目标状态(环境检测 + 代理 + code-server 配置卡 + 多服务同时运行 + SSH 终端 + 操作行): 全部通过');
   process.exit(failed ? 1 : 0);
 })().catch((e) => {
   console.error('TEST ERR:', e.stack || e.message);

@@ -76,7 +76,9 @@ function confirmAction({ title, message, detail = '', action, danger = false }) 
   $('confirmMessage').textContent = message;
   $('confirmDetail').textContent = detail;
   $('confirmDetail').hidden = !detail;
-  $('confirmOkBtn').textContent = action;
+  // 确认键 = 图标 + 动作名(危险操作用警示三角,其余用对勾)
+  $('confirmOkLabel').textContent = action;
+  $('confirmOkIcon').setAttribute('href', danger ? '#i-warning' : '#i-check');
   $('confirmOkBtn').classList.toggle('danger-solid', danger);
   $('confirmOkBtn').classList.toggle('primary', !danger);
   $('confirmMark').classList.toggle('danger', danger);
@@ -235,6 +237,7 @@ function renderEnvUnknown() {
     setDot(`dot-${id.replace('env-', '')}`, '');
   }
   $('env-pi').title = '';
+  $('env-pi-extra').textContent = 'pi CLI';
   $('env-piweb-extra').textContent = '—';
   $('env-piweb-extra').title = '';
   $('updateBtn').hidden = true;
@@ -280,7 +283,7 @@ function renderUpdate() {
   piwebCell.textContent = !installed ? '未安装' : outdated && latest ? `v${installed} → v${latest}` : `v${installed}`;
   piwebCell.title = !installed ? '未安装,点击右侧图标执行 npm install -g @agegr/pi-web' : '';
   const piwebExtra = $('env-piweb-extra');
-  piwebExtra.textContent = !installed ? '未安装' : outdated ? '全局包 · 可更新' : '全局包';
+  piwebExtra.textContent = !installed ? '未安装' : outdated ? '有更新' : '全局包';
   const ub = $('updateBtn');
   ub.hidden = !(outdated || !installed);
   ub.disabled = false;
@@ -290,6 +293,7 @@ function renderUpdate() {
   const hasPi = !!(pi && pi.resolved);
   const piOutdated = hasPi && pi.outdated;
   setDot('dot-pi', !hasPi || !pi.installed ? 'bad' : piOutdated ? 'warn' : 'ok');
+  $('env-pi-extra').textContent = !hasPi || !pi.installed ? '未安装' : piOutdated ? '有更新' : 'pi CLI';
   const piCell = $('env-pi');
   piCell.textContent = hasPi
     ? (!pi.installed ? '未安装' : piOutdated && pi.latest ? `v${pi.installed} → v${pi.latest}` : `v${pi.installed}`)
@@ -335,6 +339,7 @@ function checkUpdate({ silent = false, fresh = false } = {}) {
 }
 
 async function runUpdate(target = 'pi-web') {
+  if (restartBusy()) return;
   if (state.updating) return;
   state.updating = true;
   const isPi = target === 'pi';
@@ -343,7 +348,7 @@ async function runUpdate(target = 'pi-web') {
   btn.disabled = true;
   btn.classList.add('spinning');
   btn.title = installing ? '安装中…' : '更新中…';
-  const tag = isPi ? '[pi] ' : '[pi-web] ';
+  const tag = isPi ? '[pi] ' : '[Pi Web] ';
   appendLog('update', `\n${tag}—— 开始${installing ? '安装' : '更新'} ——\n`);
 
   const res = await window.piApi.runUpdate(target);
@@ -354,7 +359,7 @@ async function runUpdate(target = 'pi-web') {
 
   if (res.ok) {
     appendLog('update', `${tag}✅ 完成,当前版本 v${res.version}\n`);
-    toast(`${isPi ? 'pi' : 'pi-web'} ${installing ? '已安装' : '已更新'} → v${res.version}`, 'ok');
+    toast(`${isPi ? 'pi' : 'Pi Web'} ${installing ? '已安装' : '已更新'} → v${res.version}`, 'ok');
     // 装完后的结果必须重新取:在途的旧请求(安装前发出)不能冒充最新状态
     await Promise.all([detectEnv({ silent: true, fresh: true }), checkUpdate({ silent: true, fresh: true })]);
   } else {
@@ -445,6 +450,8 @@ function renderTabs() {
       running: !!(st && st.running),
     });
   }
+  // 重建内容会丢掉轨道的横向滚动位置:目标多到需要滚动时,选中的目标会被甩出可见范围 → 先记下,画完再还原
+  const scrollLeft = wrap.scrollLeft;
   wrap.innerHTML =
     items
       .map((it) => {
@@ -454,18 +461,21 @@ function renderTabs() {
           it.id === 'local'
             ? ''
             : '<span class="tab-acts">' +
-              `<span class="tab-act" role="button" tabindex="-1" aria-label="编辑 ${it.label}" data-act="edit" title="编辑">✎</span>` +
-              `<span class="tab-act tab-del" role="button" tabindex="-1" aria-label="删除 ${it.label}" data-act="del" title="删除">✕</span>` +
+              `<span class="tab-act" role="button" tabindex="-1" aria-label="编辑 ${it.label}" data-act="edit" title="编辑"><svg class="icon" aria-hidden="true"><use href="#i-edit"></use></svg></span>` +
+              `<span class="tab-act tab-del" role="button" tabindex="-1" aria-label="删除 ${it.label}" data-act="del" title="删除"><svg class="icon" aria-hidden="true"><use href="#i-xmark"></use></svg></span>` +
               '</span>';
+        // 图标区分目标类型(本机 / 远程服务器);该目标的服务在运行时,名称后面带一个绿点
+        const tabIcon = it.id === 'local' ? '#i-computer' : '#i-server';
         return (
           `<button class="svc-tab${active ? ' active' : ''}${it.running ? ' running' : ''}" data-target="${it.id}" title="${it.label}">` +
-          `<span class="svc-run"></span><span class="svc-label">${it.label}</span>` +
+          `<svg class="icon" aria-hidden="true"><use href="${tabIcon}"></use></svg><span class="svc-label">${it.label}</span><span class="svc-run"></span>` +
           acts +
           (isDef ? '<span class="svc-def">默认</span>' : '') +
           '</button>'
         );
       })
-      .join('') + '<button class="svc-tab svc-add" data-target="__add" title="新增远程服务器">＋</button>';
+      .join('') + '<button class="svc-tab svc-add" data-target="__add" title="新增远程服务器" aria-label="新增远程服务器"><svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg></button>';
+  wrap.scrollLeft = scrollLeft;
 }
 
 // 应用启动模式:本地 / 远程,是否处于选中目标上
@@ -574,6 +584,7 @@ async function toggleProxy() {
 
 // 切换目标 Tab(本机 / 某台远程):不停任何服务,仅切换展示与操作对象
 async function switchTarget(id, { force = false } = {}) {
+  if (restartBusy()) return;
   if (isCurrentTarget(id) && !force) return;
   if (state.updating) {
     toast('更新任务进行中,请稍后再切换', 'err');
@@ -613,6 +624,22 @@ async function switchTarget(id, { force = false } = {}) {
 
 /* ---------------- pi-web 服务(启停/轮询) ---------------- */
 
+// 服务地址(只用于展示):运行中用主进程报告的实际地址;未运行时按当前主机 / 端口推算,
+// 拼法与主进程一致(lib/server.js 的 serverUrl、lib/remote-server.js 的 serverUrl)
+function serviceAddress() {
+  const srv = curServer();
+  if (srv.running && srv.url) return srv.url;
+  if (state.mode === 'remote') {
+    const r = activeRemote();
+    return r && r.host ? `http://${r.host}:${r.remotePort || 30141}/` : '—';
+  }
+  return `http://127.0.0.1:${(state.cfg && state.cfg.port) || 30141}/`;
+}
+
+function renderServerUrl() {
+  $('serverUrl').textContent = serviceAddress();
+}
+
 function renderServer() {
   const srv = curServer();
   const running = srv.running;
@@ -620,16 +647,20 @@ function renderServer() {
   const modeLabel = state.mode === 'remote'
     ? (activeRemote() && activeRemote().host ? `远程 ${activeRemote().host}` : '远程')
     : '本机';
-  // 图标按钮:启动▶/打开↗ 按运行态切换,tooltip 走原生 title
+  // 操作行按运行态启用:启动(唯一的主操作)只在停止时可用;停止 / 重启 / 访问只在运行时可用。
+  // 运行中要进服务页用「访问」,所以启动按钮不再兼作「打开」
   const startBtn = $('startBtn');
-  startBtn.disabled = false;
-  startBtn.classList.toggle('running', running);
-  startBtn.title = running ? '打开服务页' : '启动服务';
-  $('stopBtn').disabled = !running;
-  $('openBrowserBtn').disabled = !running;
-  $('serverState').textContent = running
-    ? `运行中${external ? '(外部启动)' : ''} · ${srv.url}`
-    : '已停止';
+  startBtn.disabled = running || restartingServer;
+  startBtn.title = '启动服务'; // startServer 启动途中会把它改成「启动中…」,这里每次渲染都复位
+  $('stopBtn').disabled = !running || restartingServer;
+  $('restartBtn').disabled = !running || restartingServer;
+  $('openPageBtn').disabled = !running || restartingServer;
+  renderTermBar(); // 终端工具栏的「Pi Web」按钮跟随同一服务状态
+  // 状态徽标:只放状态,种类写进 data-state 供样式配色(运行中 / 外部启动 / 已停止);地址单独一行显示
+  const stateEl = $('serverState');
+  stateEl.textContent = running ? `运行中${external ? '(外部启动)' : ''}` : '已停止';
+  stateEl.dataset.state = running ? (external ? 'external' : 'running') : 'stopped';
+  renderServerUrl();
 
   const chip = $('serverChip');
   chip.className = `chip ${running ? 'chip-running' : 'chip-stopped'}`;
@@ -666,14 +697,15 @@ function setServerPolling() {
       else state.servers.remotes[remoteId] = defaultServer();
       renderServer();
       showConsole();
-      toast('外部 pi-web 服务已停止', 'err');
+      toast('外部 Pi Web 服务已停止', 'err');
     }
   }, 5000);
 }
 
-async function startServer() {
+async function startServer(operation) {
+  if (operation !== RESTART_CALL && restartBusy()) return;
   if (!curServer().running && (!curEnv().env || !curEnv().env.piWeb.ok)) {
-    toast('未检测到 pi-web,请先安装或更新', 'err');
+    toast('未检测到 Pi Web,请先安装或更新', 'err');
     return;
   }
   // 已在运行(含外部实例):先探活再进服务页(远程已无看门狗,按需检测代替)
@@ -700,8 +732,8 @@ async function startServer() {
   if (res.ok) {
     setServer({ running: true, owned: !res.external, external: !!res.external, url: res.url });
     renderServer();
-    if (res.external) toast('检测到端口已占用,已连接到正在运行的 pi-web');
-    else if (res.adopted) toast('端口上的 pi-web 是本应用上次启动的,已重新接管,可直接停止或更新', 'ok');
+    if (res.external) toast('检测到端口已占用,已连接到正在运行的 Pi Web');
+    else if (res.adopted) toast('端口上的 Pi Web 是本应用上次启动的,已重新接管,可直接停止或更新', 'ok');
     showWeb(res.url);
   } else {
     toast(`启动失败:${res.error}`, 'err');
@@ -717,17 +749,18 @@ function externalStopHint() {
   const where = state.mode === 'remote'
     ? `远程 ${[r.user, r.host].filter(Boolean).join('@') || '?'} 端口 ${port}`
     : `本机端口 ${port}`;
-  return `${where} 上的 pi-web 不是本应用启动的,本应用不会代停;请在启动它的地方手动停止`;
+  return `${where} 上的 Pi Web 不是本应用启动的,本应用不会代停;请在启动它的地方手动停止`;
 }
 
-async function stopServer() {
+async function stopServer(operation) {
+  if (operation !== RESTART_CALL && restartBusy()) return;
   let res = await window.piApi.serverStop();
   // 外部实例(远程):弹原生确认框,用户知情后强制结束;本地保持提示语义(不代停)
   if (res.external && state.mode === 'remote') {
     const confirmed = await confirmAction({
-      title: '强制结束 pi-web',
+      title: '强制结束 Pi Web',
       message: `该服务不是本应用启动的。仍要结束 ${[activeRemote()?.user, activeRemote()?.host].filter(Boolean).join('@') || '远程服务器'} 端口 ${activeRemote()?.remotePort || 30141} 上的进程吗？`,
-      detail: '将结束该端口上的 pi-web 及其子进程。请确认没有其他人正在使用。',
+      detail: '将结束该端口上的 Pi Web 及其子进程。请确认没有其他人正在使用。',
       action: '强制结束', danger: true,
     });
     if (!confirmed) return;
@@ -744,6 +777,38 @@ async function stopServer() {
   setServer(defaultServer());
   renderServer();
   showConsole();
+}
+
+// 重启 = 先停、再启动。停止沿用 stopServer 的全部规则(外部实例不代停、停止失败即保持运行态并提示),
+// 没停成功就不再叠加启动 —— 避免旧实例还在时又启一个
+let restartingServer = false;
+const RESTART_CALL = Symbol('restart');
+function restartBusy() {
+  if (!restartingServer) return false;
+  toast('服务重启中,请稍后再操作', 'err');
+  return true;
+}
+
+async function restartServer() {
+  if (restartingServer || !curServer().running) return;
+  restartingServer = true;
+  renderServer();
+  try {
+    await stopServer(RESTART_CALL);
+    if (curServer().running) return;
+    await startServer(RESTART_CALL);
+  } finally {
+    restartingServer = false;
+    renderServer();
+  }
+}
+
+// 输入框右侧的「复制」:把该输入框当前的值写进剪贴板
+async function copyFieldValue(id, what) {
+  const value = String($(id).value || '');
+  if (!value) return;
+  const res = await window.piApi.copyText(value).catch(() => null);
+  toast(res && res.ok ? `已复制${what}:${value}` : `复制失败,请手动复制:${value}`, res && res.ok ? 'ok' : 'err');
 }
 
 function showWeb(url) {
@@ -800,6 +865,7 @@ function showTerm() {
   $('consoleView').hidden = true;
   $('webView').hidden = true;
   $('termView').hidden = false;
+  refreshServerState(); // 进入终端即核对 pi-web 服务状态(可能已在别处启停)
 }
 
 function closeTerm() {
@@ -877,14 +943,109 @@ function refitTerm() {
   termState.term.focus();
 }
 
+// 终端工具栏的「Pi Web」按钮跟随当前目标的 pi-web 服务状态(与 Pi Web 卡的停止/打开按钮同一依据):
+// 服务不在运行时置灰,tooltip 说明原因 —— 不让用户点了才知道不可用
+function renderTermBar() {
+  const srv = curServer();
+  const ready = !!(srv.running && srv.url);
+  const btn = $('termWebBtn');
+  btn.disabled = !ready;
+  btn.title = ready
+    ? '切换到 Pi Web 服务页(终端会话在两视图间切换时保留)'
+    : 'Pi Web 服务未运行:请先在控制台启动服务';
+}
+
+// 重新查询当前目标的 pi-web 服务状态(进入终端视图时调用)
+async function refreshServerState() {
+  const t = curTarget();
+  let res;
+  try {
+    res = await window.piApi.serverState();
+  } catch {
+    return; // 查询失败:保持现有状态
+  }
+  // 在途时用户切了目标:结果不落到别的服务器上
+  if (keyOf(curTarget()) !== keyOf(t)) return;
+  if (state.mode === 'local') {
+    state.servers.local = { ...defaultServer(), ...res };
+  } else {
+    state.servers.remotes[state.activeRemoteId] = { ...defaultServer(), ...res };
+  }
+  renderServer();
+}
+
 // 终端 → pi-web 服务页(会话保留在后台,「终端」按钮切回来接着用)
 function openWebFromTerm() {
   const url = curServer().url;
   if (!url) {
-    toast('pi-web 服务未启动,请先在控制台启动服务', 'err');
+    toast('Pi Web 服务未启动,请先在控制台启动服务', 'err');
     return;
   }
   showWeb(url);
+}
+
+// 终端主题预设:auto = 取应用 design token(与控制台一致);其余为常见配色(带 ANSI 16 色)
+const TERM_THEMES = {
+  light: {
+    background: '#f6f8fa', foreground: '#24292f', cursor: '#4f7cff', cursorAccent: '#f6f8fa', selectionBackground: '#4f7cff44',
+    black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#4d2d00', blue: '#0969da', magenta: '#8250df', cyan: '#1b7c83', white: '#6e7781',
+    brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#633c01', brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#3192aa', brightWhite: '#8c959f',
+  },
+  dracula: {
+    background: '#282a36', foreground: '#f8f8f2', cursor: '#f8f8f2', cursorAccent: '#282a36', selectionBackground: '#44475a',
+    black: '#21222c', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2',
+    brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff',
+  },
+  'solarized-dark': {
+    background: '#002b36', foreground: '#93a1a1', cursor: '#93a1a1', cursorAccent: '#002b36', selectionBackground: '#586e75',
+    black: '#073642', red: '#dc322f', green: '#859900', yellow: '#b58900', blue: '#268bd2', magenta: '#d33682', cyan: '#2aa198', white: '#eee8d5',
+    brightBlack: '#586e75', brightRed: '#cb4b16', brightGreen: '#586e75', brightYellow: '#657b83', brightBlue: '#839496', brightMagenta: '#6c71c4', brightCyan: '#93a1a1', brightWhite: '#fdf6e3',
+  },
+  'solarized-light': {
+    background: '#fdf6e3', foreground: '#657b83', cursor: '#657b83', cursorAccent: '#fdf6e3', selectionBackground: '#93a1a1',
+    black: '#073642', red: '#dc322f', green: '#859900', yellow: '#b58900', blue: '#268bd2', magenta: '#d33682', cyan: '#2aa198', white: '#eee8d5',
+    brightBlack: '#93a1a1', brightRed: '#cb4b16', brightGreen: '#586e75', brightYellow: '#657b83', brightBlue: '#839496', brightMagenta: '#6c71c4', brightCyan: '#93a1a1', brightWhite: '#fdf6e3',
+  },
+  'one-dark': {
+    background: '#282c34', foreground: '#abb2bf', cursor: '#abb2bf', cursorAccent: '#282c34', selectionBackground: '#3e4451',
+    black: '#1e2127', red: '#e06c75', green: '#98c379', yellow: '#d19a66', blue: '#61afef', magenta: '#c678dd', cyan: '#56b6c2', white: '#abb2bf',
+    brightBlack: '#5c6370', brightRed: '#e06c75', brightGreen: '#98c379', brightYellow: '#e5c07b', brightBlue: '#61afef', brightMagenta: '#c678dd', brightCyan: '#56b6c2', brightWhite: '#ffffff',
+  },
+  monokai: {
+    background: '#272822', foreground: '#f8f8f2', cursor: '#f8f8f2', cursorAccent: '#272822', selectionBackground: '#49483e',
+    black: '#272822', red: '#f92672', green: '#a6e22e', yellow: '#f4bf75', blue: '#66d9ef', magenta: '#ae81ff', cyan: '#a1efe4', white: '#f8f8f2',
+    brightBlack: '#75715e', brightRed: '#f92672', brightGreen: '#a6e22e', brightYellow: '#f4bf75', brightBlue: '#66d9ef', brightMagenta: '#ae81ff', brightCyan: '#a1efe4', brightWhite: '#f9f8f5',
+  },
+  nord: {
+    background: '#2e3440', foreground: '#d8dee9', cursor: '#d8dee9', cursorAccent: '#2e3440', selectionBackground: '#434c5e',
+    black: '#3b4252', red: '#bf616a', green: '#a3be8c', yellow: '#ebcb8b', blue: '#81a1c1', magenta: '#b48ead', cyan: '#88c0d0', white: '#e5e9f0',
+    brightBlack: '#4c566a', brightRed: '#bf616a', brightGreen: '#a3be8c', brightYellow: '#ebcb8b', brightBlue: '#81a1c1', brightMagenta: '#b48ead', brightCyan: '#8fbcbb', brightWhite: '#eceff4',
+  },
+  'tokyo-night': {
+    background: '#1a1b26', foreground: '#c0caf5', cursor: '#c0caf5', cursorAccent: '#1a1b26', selectionBackground: '#283457',
+    black: '#15161e', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68', blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6',
+    brightBlack: '#414868', brightRed: '#f7768e', brightGreen: '#9ece6a', brightYellow: '#e0af68', brightBlue: '#7aa2f7', brightMagenta: '#bb9af7', brightCyan: '#7dcfff', brightWhite: '#c0caf5',
+  },
+  'gruvbox-dark': {
+    background: '#282828', foreground: '#ebdbb2', cursor: '#ebdbb2', cursorAccent: '#282828', selectionBackground: '#504945',
+    black: '#282828', red: '#cc241d', green: '#98971a', yellow: '#d79921', blue: '#458588', magenta: '#b16286', cyan: '#689d6a', white: '#a89984',
+    brightBlack: '#928374', brightRed: '#fb4934', brightGreen: '#b8bb26', brightYellow: '#fabd2f', brightBlue: '#83a598', brightMagenta: '#d3869b', brightCyan: '#8ec07c', brightWhite: '#ebdbb2',
+  },
+};
+
+function termThemeOf() {
+  const name = (state.cfg && state.cfg.termTheme) || 'auto';
+  if (TERM_THEMES[name]) return TERM_THEMES[name];
+  const css = getComputedStyle(document.body);
+  const accent = css.getPropertyValue('--accent').trim() || '#4f7cff';
+  const bg = css.getPropertyValue('--bg').trim() || '#0e1320';
+  return {
+    background: bg,
+    foreground: css.getPropertyValue('--text').trim() || '#e6ebf5',
+    cursor: accent,
+    cursorAccent: bg,
+    selectionBackground: `${accent}44`,
+  };
 }
 
 async function startTermSession(t) {
@@ -893,21 +1054,14 @@ async function startTermSession(t) {
   $('termTitle').textContent = rem && rem.host ? `${rem.user ? `${rem.user}@` : ''}${rem.host}` : '(未配置)';
   setDot('termStatusDot', 'warn');
 
-  // 主题/字体取自现有 design token(保持与控制台一致的观感)
+  // 字体仍取 design token;主题按配置(默认 auto = 应用色板)
   const css = getComputedStyle(document.body);
-  const accent = css.getPropertyValue('--accent').trim() || '#4f7cff';
   const term = new Terminal({
     fontFamily: css.getPropertyValue('--mono').trim() || 'monospace',
     fontSize: 14,
     cursorBlink: true,
     scrollback: 5000,
-    theme: {
-      background: css.getPropertyValue('--bg').trim() || '#0e1320',
-      foreground: css.getPropertyValue('--text').trim() || '#e6ebf5',
-      cursor: accent,
-      cursorAccent: css.getPropertyValue('--bg').trim() || '#0e1320',
-      selectionBackground: `${accent}44`,
-    },
+    theme: termThemeOf(),
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
@@ -1044,7 +1198,7 @@ async function openCurrentProjectInEditor() {
   try {
     const dir = await detectCurrentProjectDir($('wv'));
     if (!dir) {
-      toast('没能从服务页识别出当前项目,请先在 pi-web 中打开一个项目', 'err');
+      toast('没能从服务页识别出当前项目,请先在 Pi Web 中打开一个项目', 'err');
       return;
     }
     const local = state.mode !== 'remote'; // 与主进程 editor:open 的判断一致(cfg.mode !== 'remote')
@@ -1185,6 +1339,7 @@ function genRemoteId() {
 
 // 把当前弹窗表单内容合并进激活档案并保存整个档案列表(轻校验,允许不完整)
 async function persistRemotes() {
+  if (restartBusy()) return null;
   const form = readRemoteForm();
   const err = validateRemoteForm(form, { requireTarget: false });
   if (err) {
@@ -1207,6 +1362,7 @@ function applyCfg(cfg) {
 
 // 新增一台远程服务器档案并选中,打开弹窗填写
 async function addRemote() {
+  if (restartBusy()) return;
   const id = genRemoteId();
   const profile = {
     id,
@@ -1239,6 +1395,7 @@ async function addRemote() {
 
 // 删除远程服务器(可传 id 供 Tab 上的 ✕ 使用);删的是当前目标时自动切到其余目标/本机
 async function delRemote(id) {
+  if (restartBusy()) return;
   const target = state.remotes.find((r) => r.id === (id || state.activeRemoteId));
   if (!target) return;
   if (!await confirmAction({
@@ -1247,6 +1404,7 @@ async function delRemote(id) {
     detail: '正在运行的服务会被停止。此操作无法撤销。',
     action: '删除服务器', danger: true,
   })) return;
+  if (restartBusy()) return;
   const wasCurrent = isCurrentTarget(target.id);
   state.remotes = state.remotes.filter((r) => r.id !== target.id);
   if (state.activeRemoteId === target.id) state.activeRemoteId = (state.remotes[0] && state.remotes[0].id) || '';
@@ -1278,12 +1436,14 @@ async function delRemote(id) {
 
 // 编辑远程服务器(Tab 上的 ✎):切到该目标并打开弹窗
 async function editRemote(id) {
+  if (restartBusy()) return;
   if (!isCurrentTarget(id)) await switchTarget(id);
   openServersModal();
 }
 
 // 弹窗内切换选中的服务器档案:切换操作目标(同 Tab 点击语义)
 async function selectRemote(id) {
+  if (restartBusy()) { renderRemoteSelect(); return; }
   if (!id) return;
   closeServersModal();
   await switchTarget(id);
@@ -1313,6 +1473,7 @@ async function saveCurrentRemote() {
 
 // 测试 SSH 连接(先保存表单,再由主进程连接验证)
 async function testRemote() {
+  if (restartBusy()) return;
   const remote = readRemoteForm();
   const err = validateRemoteForm(remote, { requireTarget: true });
   if (err) {
@@ -1354,6 +1515,7 @@ function fillConfigForm(cfg) {
   $('portInput').value = cfg.port;
   $('registryInput').value = cfg.registry || '';
   $('startupViewSelect').value = ['web', 'term'].includes(cfg.startupView) ? cfg.startupView : '';
+  $('termThemeSelect').value = TERM_THEMES[cfg.termTheme] ? cfg.termTheme : 'auto';
   fillProxyForm();
   fillCodeServerForm();
   fillRemoteForm(activeRemote());
@@ -1438,7 +1600,7 @@ async function detectCodeServer({ silent = false } = {}) {
   const st = csStateOf(t);
   if (st.checking) return;
   setCsState({ checking: true });
-  if (!silent) $('csState').textContent = '检测中…';
+  if (!silent) setCsStatus('checking', '检测中…');
   try {
     const res = await window.piApi.csState({ target: t });
     // 按发起时的目标归档;档案连接身份变更后,旧结果作废。
@@ -1465,37 +1627,46 @@ async function detectCodeServer({ silent = false } = {}) {
   }
 }
 
+// 状态徽标:文案原样写进 #csState,种类写进 data-state 供样式配色
+// (local / checking / error / idle / custom / missing / running / external / stopped)
+function setCsStatus(kind, text) {
+  const el = $('csState');
+  el.dataset.state = kind;
+  el.textContent = text;
+}
+
 // 状态行 + 按钮可用性(只读渲染,不碰表单输入)
 function renderCodeServer() {
-  const el = $('csState');
   const st = csStateOf();
   const isRemote = state.mode === 'remote';
   if (!isRemote) {
-    el.textContent = '本机:按地址打开(优先 VS Code)';
+    setCsStatus('local', '本机:按地址打开(优先 VS Code)');
     $('csInstallBtn').disabled = true;
     $('csStartBtn').disabled = true;
     $('csStopBtn').disabled = true;
     $('csOpenBtn').disabled = false;
     return;
   }
+  const version = st.info && st.info.version ? ` · v${st.info.version}` : '';
   if (st.checking) {
-    el.textContent = '检测中…';
+    setCsStatus('checking', '检测中…');
   } else if (st.error) {
-    el.textContent = `检测失败:${st.error.slice(0, 60)}`;
+    setCsStatus('error', `检测失败:${st.error.slice(0, 60)}`);
   } else if (!st.loaded) {
-    el.textContent = '未检测';
+    setCsStatus('idle', '未检测');
   } else if (!st.managed) {
-    el.textContent = st.base ? `自管地址 ${st.base}` : '自管';
+    setCsStatus('custom', st.base ? `自管地址 ${st.base}` : '自管');
   } else if (!st.info || !st.info.installed) {
-    el.textContent = '未安装';
+    setCsStatus('missing', '未安装');
   } else if (st.running) {
-    el.textContent = `运行中 ${st.base}${st.owned ? '' : '(非本应用启动)'}${st.info.version ? ` · v${st.info.version}` : ''}`;
+    setCsStatus(st.owned ? 'running' : 'external', `运行中 ${st.base}${st.owned ? '' : '(非本应用启动)'}${version}`);
   } else {
-    el.textContent = `已安装,未运行(端口 ${st.port || '?'})${st.info.version ? ` · v${st.info.version}` : ''}`;
+    setCsStatus('stopped', `已安装,未运行(端口 ${st.port || '?'})${version}`);
   }
   const installed = !!(st.info && st.info.installed);
   // 图标按钮:文案走原生 tooltip(与 Pi Web 卡的操作按钮保持一致)
   const installLabel = installed ? '更新' : '安装 / 更新';
+  $('csInstallLabel').textContent = installLabel; // 按钮上的可见文字与 tooltip 一致
   $('csInstallBtn').disabled = st.checking || state.updating;
   $('csInstallBtn').title = installLabel;
   $('csInstallBtn').setAttribute('aria-label', installLabel);
@@ -1613,8 +1784,8 @@ function fillProxyForm() {
   const host = (activeRemote() || {}).host || '';
   $('proxyScope').textContent = isRemote ? `· 远程 ${host}` : '· 本机';
   $('proxyHint').textContent = isRemote
-    ? `此处保存的是「${host || '该服务器'}」这台服务器自己的代理,启用/关闭用目标条上的盾形开关;在该服务器的 pi-web 启动时注入,运行中的服务重启后生效。地址按该服务器的网络填写;填 127.0.0.1 表示用本机(运行本应用的电脑)上的代理,经 SSH 反向隧道送达。`
-    : '此处保存的是本机自己的代理,启用/关闭用目标条上的盾形开关。本机 pi-web 服务(127.0.0.1)始终不走代理;内嵌页面始终使用本机的这份代理。';
+    ? `此处保存的是「${host || '该服务器'}」这台服务器自己的代理,启用/关闭用目标条上的盾形开关;在该服务器的 Pi Web 启动时注入,运行中的服务重启后生效。地址按该服务器的网络填写;填 127.0.0.1 表示用本机(运行本应用的电脑)上的代理,经 SSH 反向隧道送达。`
+    : '此处保存的是本机自己的代理,启用/关闭用目标条上的盾形开关。本机 Pi Web 服务(127.0.0.1)始终不走代理;内嵌页面始终使用本机的这份代理。';
 }
 
 // 读取代理表单(协议下拉单行 + 不代理列表)
@@ -1642,11 +1813,10 @@ async function saveConfig() {
     toast(proxyErr, 'err');
     return;
   }
-  // 代理只写进当前目标;registry 与启动视图是所有目标共用的
+  // 代理只写进当前目标;registry 是所有目标共用的
   const cfg = await window.piApi.setConfig({
     ...proxyPatch(proxyForm),
     registry: $('registryInput').value.trim(),
-    startupView: ['web', 'term'].includes($('startupViewSelect').value) ? $('startupViewSelect').value : '',
   });
   state.cfg = cfg;
   state.remotes = cfg.remotes || [];
@@ -1658,8 +1828,23 @@ async function saveConfig() {
   );
 }
 
+// 终端配置卡:终端主题 + 启动时打开(所有目标共用);主题对已打开的终端热切换
+async function saveTermConfig() {
+  const cfg = await window.piApi.setConfig({
+    termTheme: TERM_THEMES[$('termThemeSelect').value] ? $('termThemeSelect').value : 'auto',
+    startupView: ['web', 'term'].includes($('startupViewSelect').value) ? $('startupViewSelect').value : '',
+  });
+  state.cfg = cfg;
+  state.remotes = cfg.remotes || [];
+  if (termState.term) {
+    try { termState.term.options.theme = termThemeOf(); } catch {}
+  }
+  toast('终端配置已保存', 'ok');
+}
+
 // 端口在 Tab 上改动即保存(change 触发);运行中自动重启
 async function saveLocalPort() {
+  if (restartBusy()) { $('portInput').value = state.cfg.port; return; }
   const port = parseInt($('portInput').value, 10);
   if (!Number.isInteger(port) || port < 1024 || port > 65535) {
     toast('端口需在 1024 - 65535 之间', 'err');
@@ -1668,6 +1853,7 @@ async function saveLocalPort() {
   const prev = state.cfg;
   const cfg = await window.piApi.setConfig({ port });
   state.cfg = cfg;
+  renderServerUrl(); // 端口变了:服务地址那一行跟着变
   toast('端口已保存', 'ok');
   if (state.mode === 'local' && curServer().running && curServer().owned && prev && prev.port !== port) {
     restartAfterPortChange();
@@ -1675,6 +1861,7 @@ async function saveLocalPort() {
 }
 
 async function saveRemotePort() {
+  if (restartBusy()) { $('remoteSrvPortInput').value = activeRemote()?.remotePort || 30141; return; }
   if (state.mode !== 'remote') return;
   const p = parseInt($('remoteSrvPortInput').value, 10);
   if (!Number.isInteger(p) || p < 1024 || p > 65535) {
@@ -1686,6 +1873,7 @@ async function saveRemotePort() {
   const cfg = await window.piApi.setConfig({ remotes: state.remotes });
   state.cfg = cfg;
   state.remotes = cfg.remotes || [];
+  renderServerUrl(); // 端口变了:服务地址那一行跟着变
   renderRemoteSelect();
   toast('端口已保存', 'ok');
   if (curServer().running && curServer().owned && prev && prev.remotePort !== p) {
@@ -1763,7 +1951,13 @@ function bindEvents() {
   $('remoteSrvPortInput').addEventListener('change', saveRemotePort);
   $('startBtn').addEventListener('click', startServer);
   $('stopBtn').addEventListener('click', stopServer);
-  $('openBrowserBtn').addEventListener('click', () => curServer().url && window.piApi.openExternal(curServer().url));
+  $('restartBtn').addEventListener('click', restartServer);
+  // 访问 = 服务运行中时探活后进入服务页(走 startServer 的「已在运行」分支);按钮仅在运行时可用
+  $('openPageBtn').addEventListener('click', startServer);
+  // 主机 / 端口输入框右侧的「复制」
+  for (const b of document.querySelectorAll('.input-act[data-copy]')) {
+    b.addEventListener('click', () => copyFieldValue(b.dataset.copy, b.dataset.what));
+  }
   $('btnDefault').addEventListener('click', setDefaultTarget);
   $('proxyToggleBtn').addEventListener('click', toggleProxy);
   $('openBrowserBtn2').addEventListener('click', () => curServer().url && window.piApi.openExternal(curServer().url));
@@ -1783,6 +1977,7 @@ function bindEvents() {
   $('csStopBtn').addEventListener('click', csStop);
   $('csOpenBtn').addEventListener('click', csOpen);
   $('csSaveBtn').addEventListener('click', saveCodeServer);
+  $('termSaveBtn').addEventListener('click', saveTermConfig);
 
   // SSH 终端:入口/返回/重连 + 与 pi-web 服务页互切 + 会话输出与结束事件
   $('termOpenBtn').addEventListener('click', openTerm);
@@ -1822,7 +2017,7 @@ function bindEvents() {
   // 更新日志(pi / pi-web 同一来源,行首带标签;弹窗开着则实时刷新)
   window.piApi.onUpdateLog((payload) => {
     // payload = { target: 'pi-web' | 'pi' | 'code-server', line }
-    const tag = { pi: '[pi] ', 'code-server': '[code-server] ' }[payload && payload.target] || '[pi-web] ';
+    const tag = { pi: '[pi] ', 'code-server': '[code-server] ' }[payload && payload.target] || '[Pi Web] ';
     appendLog('update', tag + (payload.line ?? payload));
   });
 
@@ -1858,7 +2053,7 @@ function bindEvents() {
       toast(
         info.reason === 'disconnect'
           ? 'SSH 连接已断开,远程服务状态未知,重连后可重新识别'
-          : `pi-web 服务已退出(code: ${info.code ?? '?'})`,
+          : `Pi Web 服务已退出(code: ${info.code ?? '?'})`,
         'err'
       );
       openLogModal(serverSourceKey());
@@ -1878,8 +2073,8 @@ function bindEvents() {
       return;
     }
     renderServer();
-    toast(`pi-web 已重新启动(更新后自动恢复)`, 'ok');
-    tryStartupView(info); // 「启动时打开 Pi-web 服务页」:服务就绪后第一次自动进入
+    toast(`Pi Web 已重新启动(更新后自动恢复)`, 'ok');
+    tryStartupView(info); // 「启动时打开 Pi Web 服务页」:服务就绪后第一次自动进入
   });
 
   // 在 webview 中粘贴/拖入文件 → 已把路径插入聊天输入框
@@ -1903,7 +2098,7 @@ function canDetectTarget() {
   return state.mode !== 'remote' || !!(r && r.host && r.user);
 }
 
-// 「启动时打开」:按配置自动进入 Pi-web 服务页 / SSH 终端。每次应用运行只自动打开一次;
+// 「启动时打开」:按配置自动进入 Pi Web 服务页 / SSH 终端。每次应用运行只自动打开一次;
 // 用户已自己切去别的视图则不再打扰。web 在服务未就绪时等首次就绪(onServerStarted)再开
 let startupViewOpened = false;
 function tryStartupView(info) {
@@ -1926,7 +2121,17 @@ function tryStartupView(info) {
   }
 }
 
+// 无边框窗口(Windows):系统标题栏已隐藏,最小化/最大化/关闭是叠加在右上角的原生按钮。
+// 是否无边框由主进程决定(main.js 创建窗口时),随页面地址的 ?wco=1 带过来 —— 页面脚本一执行就能同步拿到,
+// 第一帧的布局就是对的。(navigator.windowControlsOverlay.visible 在启动瞬间并不可靠:实测偶发为 false,稍后才变)
+function applyWindowControls() {
+  if (new URLSearchParams(location.search).get('wco') === '1') {
+    document.body.classList.add('wco');
+  }
+}
+
 async function init() {
+  applyWindowControls(); // 先于首次渲染,顶栏高度与让位从第一帧起就正确
   bindEvents();
 
   const cfg = await window.piApi.getConfig();

@@ -9,12 +9,54 @@
   <link rel="stylesheet" href="vendor/xterm/xterm.css" />
 </head>
 <body>
+  <!-- 图标:Iconoir(https://iconoir.com,MIT License)内联为同文档符号表,各处用 <use> 引用。
+       路径照抄官方 iconoir@7.12.2 的 regular / solid SVG(24 网格、描边 1.5);CSP 不允许外链脚本,所以不引入运行时图标库。
+       例外:i-stop 取官方 square 实心化并缩到 72%(Iconoir 没有 stop,这样和实心的 play 配成一对)。颜色、粗细由 style.css 的 .icon 统一控制 -->
+  <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M6.90588 4.53682C6.50592 4.2998 6 4.58808 6 5.05299V18.947C6 19.4119 6.50592 19.7002 6.90588 19.4632L18.629 12.5162C19.0211 12.2838 19.0211 11.7162 18.629 11.4838L6.90588 4.53682Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><g transform="translate(12 12) scale(0.72) translate(-12 -12)"><path d="M21 3.6V20.4C21 20.7314 20.7314 21 20.4 21H3.6C3.26863 21 3 20.7314 3 20.4V3.6C3 3.26863 3.26863 3 3.6 3H20.4C20.7314 3 21 3.26863 21 3.6Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></g></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M21 3L15 3M21 3L12 12M21 3V9" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M21 13V19C21 20.1046 20.1046 21 19 21H5C3.89543 21 3 20.1046 3 19V5C3 3.89543 3.89543 3 5 3H11" stroke="currentColor" stroke-linecap="round" stroke-linejoin="miter" /></symbol>
+    <symbol id="i-browser" viewBox="0 0 24 24"><path d="M8 21H20.4C20.7314 21 21 20.7314 21 20.4V3.6C21 3.26863 20.7314 3 20.4 3H3.6C3.26863 3 3 3.26863 3 3.6V16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M10 6L18 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M6 6H7" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M3.5 20.5L12 12M12 12V16M12 12H8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M8.58737 8.23597L11.1849 3.00376C11.5183 2.33208 12.4817 2.33208 12.8151 3.00376L15.4126 8.23597L21.2215 9.08017C21.9668 9.18848 22.2638 10.0994 21.7243 10.6219L17.5217 14.6918L18.5135 20.4414C18.6409 21.1798 17.8614 21.7428 17.1945 21.3941L12 18.678L6.80547 21.3941C6.1386 21.7428 5.35909 21.1798 5.48645 20.4414L6.47825 14.6918L2.27575 10.6219C1.73617 10.0994 2.03322 9.18848 2.77852 9.08017L8.58737 8.23597Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-page" viewBox="0 0 24 24"><path d="M4 21.4V2.6C4 2.26863 4.26863 2 4.6 2H16.2515C16.4106 2 16.5632 2.06321 16.6757 2.17574L19.8243 5.32426C19.9368 5.43679 20 5.5894 20 5.74853V21.4C20 21.7314 19.7314 22 19.4 22H4.6C4.26863 22 4 21.7314 4 21.4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M8 10L16 10" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M8 18L16 18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M8 14L12 14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M16 2V5.4C16 5.73137 16.2686 6 16.6 6H20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21.8883 13.5C21.1645 18.3113 17.013 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C16.1006 2 19.6248 4.46819 21.1679 8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M17 8H21.4C21.7314 8 22 7.73137 22 7.4V3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M13 17H20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M5 7L10 12L5 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M21 12L3 12M3 12L11.5 3.5M3 12L11.5 20.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M13.5 6L10 18.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M6.5 8.5L3 12L6.5 15.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M17.5 8.5L21 12L17.5 15.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-brackets" viewBox="0 0 24 24"><path d="M10 17L9.33334 17C8.22877 17 7.33334 16.1047 7.33334 15.0002C7.33334 14.3284 7.33334 13.6211 7.33333 13.1111C7.33333 12.5556 6 12 6 12C6 12 7.33333 11.4444 7.33334 10.8889C7.33334 10.4359 7.33334 9.70586 7.33334 8.99998C7.33334 7.89541 8.22877 7 9.33334 7L10 7" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M14 17L14.6667 17C15.7712 17 16.6667 16.1047 16.6667 15.0002C16.6667 14.3284 16.6667 13.6211 16.6667 13.1111C16.6667 12.5556 18 12 18 12C18 12 16.6667 11.4444 16.6667 10.8889C16.6667 10.4359 16.6667 9.70586 16.6667 8.99998C16.6667 7.89541 15.7712 7 14.6667 7L14 7" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M21 3.6V20.4C21 20.7314 20.7314 21 20.4 21H3.6C3.26863 21 3 20.7314 3 20.4V3.6C3 3.26863 3.26863 3 3.6 3H20.4C20.7314 3 21 3.26863 21 3.6Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-computer" viewBox="0 0 24 24"><path d="M2 21L17 21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M21 21L22 21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M2 16.4V3.6C2 3.26863 2.26863 3 2.6 3H21.4C21.7314 3 22 3.26863 22 3.6V16.4C22 16.7314 21.7314 17 21.4 17H2.6C2.26863 17 2 16.7314 2 16.4Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><path d="M6 18.01L6.01 17.9989" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M6 6.01L6.01 5.99889" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M2 9.4V2.6C2 2.26863 2.26863 2 2.6 2H21.4C21.7314 2 22 2.26863 22 2.6V9.4C22 9.73137 21.7314 10 21.4 10H2.6C2.26863 10 2 9.73137 2 9.4Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /> <path d="M2 21.4V14.6C2 14.2686 2.26863 14 2.6 14H21.4C21.7314 14 22 14.2686 22 14.6V21.4C22 21.7314 21.7314 22 21.4 22H2.6C2.26863 22 2 21.7314 2 21.4Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /></symbol>
+    <symbol id="i-server-connection" viewBox="0 0 24 24"><path d="M3 19H12M21 19H12M12 19V13M12 13H18V5H6V13H12Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M9 9.01L9.01 8.99889" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M12 9.01L12.01 8.99889" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M14.3632 5.65156L15.8431 4.17157C16.6242 3.39052 17.8905 3.39052 18.6716 4.17157L20.0858 5.58579C20.8668 6.36683 20.8668 7.63316 20.0858 8.41421L18.6058 9.8942M14.3632 5.65156L4.74749 15.2672C4.41542 15.5993 4.21079 16.0376 4.16947 16.5054L3.92738 19.2459C3.87261 19.8659 4.39148 20.3848 5.0115 20.33L7.75191 20.0879C8.21972 20.0466 8.65806 19.8419 8.99013 19.5099L18.6058 9.8942M14.3632 5.65156L18.6058 9.8942" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-xmark" viewBox="0 0 24 24"><path d="M6.75827 17.2426L12.0009 12M17.2435 6.75736L12.0009 12M12.0009 12L6.75827 6.75736M12.0009 12L17.2435 17.2426" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-xmark-circle" viewBox="0 0 24 24"><path d="M9.17218 14.8284L12.0006 12M14.829 9.17157L12.0006 12M12.0006 12L9.17218 9.17157M12.0006 12L14.829 14.8284" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M6 12H12M18 12H12M12 12V6M12 12V18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-network" viewBox="0 0 24 24"><rect x="3" y="2" width="7" height="5" rx="0.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /> <rect x="8.5" y="17" width="7" height="5" rx="0.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /> <rect x="14" y="2" width="7" height="5" rx="0.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /> <path d="M6.5 7V10.5C6.5 11.6046 7.39543 12.5 8.5 12.5H15.5C16.6046 12.5 17.5 11.6046 17.5 10.5V7" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /> <path d="M12 12.5V17" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><path d="M19.4 20H9.6C9.26863 20 9 19.7314 9 19.4V9.6C9 9.26863 9.26863 9 9.6 9H19.4C19.7314 9 20 9.26863 20 9.6V19.4C20 19.7314 19.7314 20 19.4 20Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M15 9V4.6C15 4.26863 14.7314 4 14.4 4H4.6C4.26863 4 4 4.26863 4 4.6V14.4C4 14.7314 4.26863 15 4.6 15H9" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-floppy" viewBox="0 0 24 24"><path d="M3 19V5C3 3.89543 3.89543 3 5 3H16.1716C16.702 3 17.2107 3.21071 17.5858 3.58579L20.4142 6.41421C20.7893 6.78929 21 7.29799 21 7.82843V19C21 20.1046 20.1046 21 19 21H5C3.89543 21 3 20.1046 3 19Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /> <path d="M8.6 9H15.4C15.7314 9 16 8.73137 16 8.4V3.6C16 3.26863 15.7314 3 15.4 3H8.6C8.26863 3 8 3.26863 8 3.6V8.4C8 8.73137 8.26863 9 8.6 9Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /> <path d="M6 13.6V21H18V13.6C18 13.2686 17.7314 13 17.4 13H6.6C6.26863 13 6 13.2686 6 13.6Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 13L9 17L19 7" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="M20.0429 21H3.95705C2.41902 21 1.45658 19.3364 2.22324 18.0031L10.2662 4.01533C11.0352 2.67792 12.9648 2.67791 13.7338 4.01532L21.7768 18.0031C22.5434 19.3364 21.581 21 20.0429 21Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="miter" /> <path d="M12 9V13" stroke="currentColor" stroke-linecap="round" stroke-linejoin="miter" /> <path d="M12 17.01L12.01 16.9989" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-warning-circle" viewBox="0 0 24 24"><path d="M12 7L12 13" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M12 17.01L12.01 16.9989" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-help-circle" viewBox="0 0 24 24"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M9 9C9 5.49997 14.5 5.5 14.5 9C14.5 11.5 12 10.9999 12 13.9999" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M12 18.01L12.01 17.9989" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M2 8L11.7317 3.13416C11.9006 3.04971 12.0994 3.0497 12.2683 3.13416L22 8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M20 11V19C20 20.1046 19.1046 21 18 21H6C4.89543 21 4 20.1046 4 19V11" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><path d="M5 12V18C5 18 5 21 12 21C19 21 19 18 19 18V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /> <path d="M5 6V12C5 12 5 15 12 15C19 15 19 12 19 12V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /> <path d="M12 3C19 3 19 6 19 6C19 6 19 9 12 9C5 9 5 6 5 6C5 6 5 3 12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M14 11.9976C14 9.5059 11.683 7 8.85714 7C8.52241 7 7.41904 7.00001 7.14286 7.00001C4.30254 7.00001 2 9.23752 2 11.9976C2 14.376 3.70973 16.3664 6 16.8714C6.36756 16.9525 6.75006 16.9952 7.14286 16.9952" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M10 11.9976C10 14.4893 12.317 16.9952 15.1429 16.9952C15.4776 16.9952 16.581 16.9952 16.8571 16.9952C19.6975 16.9952 22 14.7577 22 11.9976C22 9.6192 20.2903 7.62884 18 7.12383C17.6324 7.04278 17.2499 6.99999 16.8571 6.99999" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><path d="M16 12H17.4C17.7314 12 18 12.2686 18 12.6V19.4C18 19.7314 17.7314 20 17.4 20H6.6C6.26863 20 6 19.7314 6 19.4V12.6C6 12.2686 6.26863 12 6.6 12H8M16 12V8C16 6.66667 15.2 4 12 4C8.8 4 8 6.66667 8 8V12M16 12H8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><path d="M12 11.5V16.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M12 7.51L12.01 7.49889" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-tv" viewBox="0 0 24 24"><path d="M7 21L17 21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M2 16.4V3.6C2 3.26863 2.26863 3 2.6 3H21.4C21.7314 3 22 3.26863 22 3.6V16.4C22 16.7314 21.7314 17 21.4 17H2.6C2.26863 17 2 16.7314 2 16.4Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /></symbol>
+    <symbol id="i-window-tabs" viewBox="0 0 24 24"><path d="M22 8H15.5M9 4V8H15.5M15.5 8V4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M2 17.7143V6.28571C2 5.02335 2.99492 4 4.22222 4H19.7778C21.0051 4 22 5.02335 22 6.28571V17.7143C22 18.9767 21.0051 20 19.7778 20H4.22222C2.99492 20 2 18.9767 2 17.7143Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter" /></symbol>
+    <symbol id="i-package" viewBox="0 0 24 24"><path d="M20 5.99999L20 18C20 19.1046 19.1046 20 18 20H6C4.89543 20 4 19.1046 4 18V6C4 4.89543 4.89543 4 6 4H18C19.1045 4 19.9999 4.89543 20 5.99999Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /> <path d="M12 9V4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-node-logo" viewBox="0 0 24 24"><path d="M11.998,24c-0.321,0-0.641-0.084-0.922-0.247l-2.936-1.737c-0.438-0.245-0.224-0.332-0.08-0.383 c0.585-0.203,0.703-0.25,1.328-0.604c0.065-0.037,0.151-0.023,0.218,0.017l2.256,1.339c0.082,0.045,0.197,0.045,0.272,0l8.795-5.076 c0.082-0.047,0.134-0.141,0.134-0.238V6.921c0-0.099-0.053-0.192-0.137-0.242l-8.791-5.072c-0.081-0.047-0.189-0.047-0.271,0 L3.075,6.68C2.99,6.729,2.936,6.825,2.936,6.921v10.15c0,0.097,0.054,0.189,0.139,0.235l2.409,1.392 c1.307,0.654,2.108-0.116,2.108-0.89V7.787c0-0.142,0.114-0.253,0.256-0.253h1.115c0.139,0,0.255,0.112,0.255,0.253v10.021 c0,1.745-0.95,2.745-2.604,2.745c-0.508,0-0.909,0-2.026-0.551L2.28,18.675c-0.57-0.329-0.922-0.945-0.922-1.604V6.921 c0-0.659,0.353-1.275,0.922-1.603l8.795-5.082c0.557-0.315,1.296-0.315,1.848,0l8.794,5.082c0.57,0.329,0.924,0.944,0.924,1.603 v10.15c0,0.659-0.354,1.273-0.924,1.604l-8.794,5.078C12.643,23.916,12.324,24,11.998,24z M19.099,13.993 c0-1.9-1.284-2.406-3.987-2.763c-2.731-0.361-3.009-0.548-3.009-1.187c0-0.528,0.235-1.233,2.258-1.233 c1.807,0,2.473,0.389,2.747,1.607c0.024,0.115,0.129,0.199,0.247,0.199h1.141c0.071,0,0.138-0.031,0.186-0.081 c0.048-0.054,0.074-0.123,0.067-0.196c-0.177-2.098-1.571-3.076-4.388-3.076c-2.508,0-4.004,1.058-4.004,2.833 c0,1.925,1.488,2.457,3.895,2.695c2.88,0.282,3.103,0.703,3.103,1.269c0,0.983-0.789,1.402-2.642,1.402 c-2.327,0-2.839-0.584-3.011-1.742c-0.02-0.124-0.126-0.215-0.253-0.215h-1.137c-0.141,0-0.254,0.112-0.254,0.253 c0,1.482,0.806,3.248,4.655,3.248C17.501,17.007,19.099,15.91,19.099,13.993z" fill="#5FA04E" /></symbol>
+    <symbol id="i-npm-logo" viewBox="0 0 24 24"><path d="M1.763 0C.786 0 0 .786 0 1.763v20.474C0 23.214.786 24 1.763 24h20.474c.977 0 1.763-.786 1.763-1.763V1.763C24 .786 23.214 0 22.237 0zM5.13 5.323l13.837.019-.009 13.836h-3.464l.01-10.382h-3.456L12.04 19.17H5.113z" fill="#CB3837" /></symbol>
+    <symbol id="i-pi-logo" viewBox="135 135 530 530"><path fill="#F09082" d="M165.29 165.29H517.36V400H400V282.65H165.29Z"/> <path fill="#4D9ABF" d="M165.29 282.65H282.65V400H400V517.36H282.65V634.72H165.29Z"/> <path fill="#F1BE58" d="M517.36 400H634.72V634.72H517.36Z"/></symbol>
+  </svg>
+
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <img class="logo" src="../build/pi-icon.svg" alt="Pi" />
+        <img class="logo" src="../build/icons/icon-64.png" alt="Pi" />
         <span class="name">Pi Web Desktop</span>
-        <span id="appVersion" class="muted" title="桌面端版本">—</span>
+        <span id="appVersion" class="app-version" title="桌面端版本">—</span>
       </div>
       <div class="topbar-right">
         <span id="serverChip" class="chip chip-stopped">
@@ -28,30 +70,32 @@
   <div class="scope-bar">
     <span class="scope-label">目标</span>
     <div class="svc-tabs" id="svcTabs"></div>
-    <button id="termOpenBtn" class="svc-icon" title="打开 SSH 终端(仅远程)" aria-label="打开 SSH 终端">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="4 17 10 11 4 5"></polyline>
-                <line x1="12" y1="19" x2="20" y2="19"></line>
-              </svg>
-            </button>
-    <button id="proxyToggleBtn" class="svc-icon proxy" title="启用代理" aria-label="启用代理">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path>
-                <path class="proxy-check" d="m9 12 2 2 4-4" style="display:none"></path>
-              </svg>
-            </button>
+    <button id="termOpenBtn" class="scope-icon" title="打开 SSH 终端(仅远程)" aria-label="打开 SSH 终端">
+      <svg class="icon" aria-hidden="true"><use href="#i-terminal"></use></svg>
+    </button>
+    <!-- 代理开关保留内联路径(Iconoir shield + shield-check 里的对勾):对勾那一笔由 app.js 直接改 style.display -->
+    <button id="proxyToggleBtn" class="scope-icon proxy" title="启用代理" aria-label="启用代理">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 18L3.13036 4.91253C3.05646 4.39524 3.39389 3.91247 3.90398 3.79912L11.5661 2.09641C11.8519 2.03291 12.1481 2.03291 12.4339 2.09641L20.096 3.79912C20.6061 3.91247 20.9435 4.39524 20.8696 4.91252L19 18C18.9293 18.495 18.5 21.5 12 21.5C5.5 21.5 5.07071 18.495 5 18Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"></path>
+        <path class="proxy-check" d="M8.5 11.5L11.5 14.5L16.5 9.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="display:none"></path>
+      </svg>
+    </button>
   </div>
 
-  <!-- ============ 控制台视图:三大块(Pi Web 配置 / Code Server 配置 / 代理设置) ============ -->
+  <!-- ============ 控制台视图:四大块(Pi Web 配置 / Code Server 配置 / 终端配置 / 代理设置) ============ -->
   <main id="consoleView">
-    <!-- 块一:Pi Web 配置(原「系统服务」+「环境检测」合并;内容按目标(本机/各远程)切换) -->
+    <!-- 块一:Pi Web 配置(「系统服务」+「环境检测」;内容按目标(本机/各远程)切换) -->
     <section class="card card-full">
       <div class="card-head">
-        <h2>Pi Web 配置 <span class="muted" id="serverScope"></span></h2>
+        <h2>
+          <span class="card-tile"><svg class="icon" aria-hidden="true"><use href="#i-server"></use></svg></span>
+          <span class="card-title"><strong>Pi Web</strong> 配置 <span class="muted" id="serverScope"></span></span>
+          <span class="card-sub">启动和管理 Pi Web 服务</span>
+        </h2>
         <div class="card-actions">
-          <span id="serverState" class="muted">已停止</span>
-          <button id="updateLogBtn" class="btn ghost sm">更新日志</button>
-          <button id="redetectBtn" class="btn ghost sm">重新检测</button>
+          <span id="serverState" class="status" data-state="stopped">已停止</span>
+          <button id="updateLogBtn" class="btn sm"><svg class="icon" aria-hidden="true"><use href="#i-page"></use></svg>更新日志</button>
+          <button id="redetectBtn" class="btn sm"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>重新检测</button>
         </div>
       </div>
       <div class="piweb-grid">
@@ -60,96 +104,89 @@
           <div class="svc-panel">
             <div class="form-row">
               <label class="field">
-                <span class="field-label">主机</span>
-                <input type="text" id="svcHost" disabled />
+                <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg>主机</span>
+                <div class="input-wrap">
+                  <input type="text" id="svcHost" disabled />
+                  <button type="button" class="input-act" data-copy="svcHost" data-what="主机地址" title="复制" aria-label="复制主机地址"><svg class="icon" aria-hidden="true"><use href="#i-copy"></use></svg></button>
+                </div>
               </label>
               <label class="field" id="localPortField">
-                <span class="field-label">端口</span>
-                <input type="number" id="portInput" min="1024" max="65535" />
+                <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-db"></use></svg>端口</span>
+                <div class="input-wrap">
+                  <input type="number" id="portInput" min="1024" max="65535" />
+                  <button type="button" class="input-act" data-copy="portInput" data-what="端口" title="复制" aria-label="复制端口"><svg class="icon" aria-hidden="true"><use href="#i-copy"></use></svg></button>
+                </div>
               </label>
               <label class="field" id="remotePortField" hidden>
-                <span class="field-label">端口(webview 直连,需防火墙放行)</span>
-                <input type="number" id="remoteSrvPortInput" min="1024" max="65535" />
+                <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-db"></use></svg>端口(webview 直连,需防火墙放行)</span>
+                <div class="input-wrap">
+                  <input type="number" id="remoteSrvPortInput" min="1024" max="65535" />
+                  <button type="button" class="input-act" data-copy="remoteSrvPortInput" data-what="端口" title="复制" aria-label="复制端口"><svg class="icon" aria-hidden="true"><use href="#i-copy"></use></svg></button>
+                </div>
               </label>
             </div>
+            <!-- 操作行:每个按钮都是「图标 + 文字」。主操作(启动)唯一实心蓝;重启 / 访问仅在服务运行时可用 -->
             <div class="btn-row svc-actions">
-              <button id="startBtn" class="svc-icon primary" title="启动服务" aria-label="启动服务">
-                <svg class="ic-play" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  <polygon points="6 3 20 12 6 21 6 3"></polygon>
-                </svg>
-                <svg class="ic-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                  <polyline points="15 3 21 3 21 9"></polyline>
-                  <line x1="10" y1="14" x2="21" y2="3"></line>
-                </svg>
+              <button id="startBtn" class="btn primary" title="启动服务" aria-label="启动服务">
+                <svg class="icon solid" aria-hidden="true"><use href="#i-play"></use></svg>启动
               </button>
-              <button id="stopBtn" class="svc-icon danger" title="停止服务" aria-label="停止服务" disabled>
-                <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  <rect x="6" y="6" width="12" height="12" rx="2"></rect>
-                </svg>
+              <button id="stopBtn" class="btn danger" title="停止服务" aria-label="停止服务" disabled>
+                <svg class="icon" aria-hidden="true"><use href="#i-stop"></use></svg>停止
               </button>
-              <button id="openBrowserBtn" class="svc-icon" title="在系统浏览器打开" aria-label="在系统浏览器打开" disabled>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="2" y1="12" x2="22" y2="12"></line>
-                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                </svg>
+              <button id="restartBtn" class="btn" title="重启服务(先停止,再启动)" aria-label="重启服务" disabled>
+                <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>重启
               </button>
-              <button id="btnDefault" class="svc-icon star" title="设为应用启动默认" aria-label="设为应用启动默认">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                </svg>
+              <button id="openPageBtn" class="btn" title="打开服务页" aria-label="打开服务页" disabled>
+                <svg class="icon" aria-hidden="true"><use href="#i-open"></use></svg>访问
               </button>
-              <button id="svcLogBtn" class="svc-icon" title="服务日志" aria-label="查看服务日志">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                  <line x1="16" y1="13" x2="8" y2="13"></line>
-                  <line x1="16" y1="17" x2="8" y2="17"></line>
-                  <polyline points="10 9 9 9 8 9"></polyline>
-                </svg>
+              <button id="btnDefault" class="btn star" title="设为应用启动默认" aria-label="设为应用启动默认">
+                <svg class="icon" aria-hidden="true"><use href="#i-star"></use></svg>收藏
+              </button>
+              <button id="svcLogBtn" class="btn" title="服务日志" aria-label="查看服务日志">
+                <svg class="icon" aria-hidden="true"><use href="#i-page"></use></svg>日志
               </button>
             </div>
+            <!-- 服务地址:运行中是主进程报告的实际地址,未运行时按主机 / 端口推算(见 app.js serviceAddress) -->
+            <p id="serverUrl" class="mono svc-url" title="服务地址">—</p>
           </div>
         </div>
         <div class="piweb-col">
-          <h3 class="block-sub">环境检测 <span class="muted" id="envScope"></span></h3>
+          <h3 class="block-sub">环境检测<svg class="icon sub-info" aria-hidden="true"><use href="#i-info"></use></svg> <span class="muted" id="envScope"></span></h3>
+          <!-- 列表里每行的 .dot 只用来记录该行的状态(app.js 的 setDot 改它的类),本身不显示;版本号与状态标签的颜色据此切换 -->
           <ul class="env-list">
             <li class="env-item">
-              <span class="env-name"><span class="dot" id="dot-node"></span>Node.js</span>
+              <svg class="bicon" aria-hidden="true"><use href="#i-node-logo"></use></svg>
+              <span class="env-name">Node.js</span>
               <span class="mono env-status" id="env-node">—</span>
-              <span class="muted env-type">运行时</span>
+              <span class="env-type">运行时</span>
+              <span class="dot" id="dot-node" hidden></span>
             </li>
             <li class="env-item">
-              <span class="env-name"><span class="dot" id="dot-npm"></span>npm</span>
+              <svg class="bicon" aria-hidden="true"><use href="#i-npm-logo"></use></svg>
+              <span class="env-name">npm</span>
               <span class="mono env-status" id="env-npm">—</span>
-              <span class="muted env-type">包管理器</span>
+              <span class="env-type">包管理器</span>
+              <span class="dot" id="dot-npm" hidden></span>
             </li>
             <li class="env-item">
-              <span class="env-name"><span class="dot" id="dot-pi"></span>pi</span>
-              <span class="env-status-wrap">
-                <span class="mono env-status" id="env-pi" title="">—</span>
-                <button id="piUpdateBtn" class="env-act-icon" title="一键更新" aria-label="一键更新 pi">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                  </svg>
-                </button>
-              </span>
-              <span class="muted env-type">pi CLI</span>
+              <svg class="bicon" aria-hidden="true"><use href="#i-pi-logo"></use></svg>
+              <span class="env-name">pi</span>
+              <span class="mono env-status" id="env-pi" title="">—</span>
+              <span class="env-type" id="env-pi-extra">pi CLI</span>
+              <button id="piUpdateBtn" class="icon-btn env-act-icon" title="一键更新" aria-label="一键更新 pi" hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>
+              </button>
+              <span class="dot" id="dot-pi" hidden></span>
             </li>
             <li class="env-item">
-              <span class="env-name"><span class="dot" id="dot-piweb"></span>pi-web <span class="muted">(@agegr/pi-web)</span></span>
-              <span class="env-status-wrap">
-                <span class="mono env-status" id="env-piweb">—</span>
-                <button id="updateBtn" class="env-act-icon" title="一键更新" aria-label="一键更新 pi-web">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                  </svg>
-                </button>
-              </span>
-              <span class="muted env-type" id="env-piweb-extra">全局包</span>
+              <img class="bicon" src="vendor/icons/pi-web-display.png" alt="" />
+              <span class="env-name">Pi Web <span class="muted">(@agegr/pi-web)</span></span>
+              <span class="mono env-status" id="env-piweb">—</span>
+              <span class="env-type" id="env-piweb-extra">全局包</span>
+              <button id="updateBtn" class="icon-btn env-act-icon" title="一键更新" aria-label="一键更新 Pi Web" hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>
+              </button>
+              <span class="dot" id="dot-piweb" hidden></span>
             </li>
           </ul>
         </div>
@@ -159,66 +196,109 @@
     <!-- 块二:Code Server 配置(地址/监听端口/密码 + 安装/启停/打开;远程为托管模式,本机仅地址) -->
     <section class="card card-full">
       <div class="card-head">
-        <h2>Code Server 配置 <span class="muted" id="codeServerScope"></span></h2>
+        <h2>
+          <span class="card-tile"><svg class="icon" aria-hidden="true"><use href="#i-brackets"></use></svg></span>
+          <span class="card-title"><strong>Code Server</strong> 配置 <span class="muted" id="codeServerScope"></span></span>
+          <span class="card-sub">通过浏览器访问本地开发环境</span>
+        </h2>
         <div class="card-actions">
-          <span id="csState" class="muted">检测中…</span>
-          <button id="csRedetectBtn" class="btn ghost sm">重新检测</button>
+          <span id="csState" class="status" data-state="checking">检测中…</span>
+          <button id="csRedetectBtn" class="btn sm"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>重新检测</button>
         </div>
       </div>
       <div class="form-grid cs-table">
         <label class="field">
-          <span class="field-label">地址(可选;留空 = 本应用检测并按需启动)</span>
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-link"></use></svg>地址(可选;留空 = 本应用检测并按需启动)</span>
           <input type="text" id="codeServerUrlInput" placeholder="留空自动检测,或填 http://192.168.1.100:8080" autocomplete="off" />
         </label>
         <label class="field" id="csPortField">
-          <span class="field-label">监听端口(0.0.0.0,被占自动顺延)</span>
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-db"></use></svg>监听端口(0.0.0.0,被占自动顺延)</span>
           <input type="number" id="csPortInput" min="1024" max="65535" placeholder="8080" />
         </label>
         <label class="field" id="csPasswordField">
-          <span class="field-label">登录密码(明文存于服务器;留空 = 沿用已有 / 自动生成)</span>
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-lock"></use></svg>登录密码(明文存于服务器;留空 = 沿用已有 / 自动生成)</span>
           <input type="password" id="csPasswordInput" autocomplete="off" />
         </label>
       </div>
+      <!-- 生命周期操作在前(启动 / 停止 / 打开 / 安装更新),保存配置在后 -->
       <div class="btn-row svc-actions cs-actions">
-        <button id="csStartBtn" class="svc-icon primary" title="启动" aria-label="启动 code-server" disabled>
-          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
-            <polygon points="6 3 20 12 6 21 6 3"></polygon>
-          </svg>
+        <button id="csStartBtn" class="btn primary" title="启动" aria-label="启动 code-server" disabled>
+          <svg class="icon solid" aria-hidden="true"><use href="#i-play"></use></svg>启动
         </button>
-        <button id="csStopBtn" class="svc-icon danger" title="停止" aria-label="停止 code-server" disabled>
-          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
-            <rect x="6" y="6" width="12" height="12" rx="2"></rect>
-          </svg>
+        <button id="csStopBtn" class="btn danger" title="停止" aria-label="停止 code-server" disabled>
+          <svg class="icon" aria-hidden="true"><use href="#i-stop"></use></svg>停止
         </button>
-        <button id="csOpenBtn" class="svc-icon" title="打开" aria-label="打开 code-server 窗口" disabled>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-            <polyline points="15 3 21 3 21 9"></polyline>
-            <line x1="10" y1="14" x2="21" y2="3"></line>
-          </svg>
+        <button id="csOpenBtn" class="btn" title="打开" aria-label="打开 code-server 窗口" disabled>
+          <svg class="icon" aria-hidden="true"><use href="#i-open"></use></svg>打开
         </button>
-        <button id="csInstallBtn" class="svc-icon" title="安装 / 更新" aria-label="安装或更新 code-server">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-          </svg>
+        <button id="csInstallBtn" class="btn" title="安装 / 更新" aria-label="安装或更新 code-server">
+          <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg><span id="csInstallLabel">安装 / 更新</span>
         </button>
-        <span class="term-bar-flex"></span>
-        <button id="csSaveBtn" class="btn primary sm">保存配置</button>
+        <span class="flex-spacer"></span>
+        <button id="csSaveBtn" class="btn"><svg class="icon" aria-hidden="true"><use href="#i-floppy"></use></svg>保存配置</button>
       </div>
       <div class="proxy-foot">
         <span class="muted hint" id="csHint"></span>
       </div>
     </section>
 
-    <!-- 块三:代理设置(每个目标各一份(本机 / 每台远程),跟随当前目标显示) -->
+    <!-- 块三:终端配置(SSH 终端主题与启动视图,所有目标共用) -->
     <section class="card card-full">
       <div class="card-head">
-        <h2>代理设置 <span class="muted" id="proxyScope"></span></h2>
+        <h2>
+          <span class="card-tile"><svg class="icon" aria-hidden="true"><use href="#i-terminal"></use></svg></span>
+          <span class="card-title"><strong>终端</strong>配置</span>
+          <span class="card-sub">选择终端类型和启动方式</span>
+        </h2>
+      </div>
+      <div class="form-grid term-grid">
+        <label class="field">
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-tv"></use></svg>终端主题(所有目标共用)</span>
+          <select id="termThemeSelect">
+            <option value="auto">跟随应用(暗色)</option>
+            <option value="light">亮色</option>
+            <option value="dracula">Dracula</option>
+            <option value="solarized-dark">Solarized Dark</option>
+            <option value="solarized-light">Solarized Light</option>
+            <option value="one-dark">One Dark</option>
+            <option value="monokai">Monokai</option>
+            <option value="nord">Nord</option>
+            <option value="tokyo-night">Tokyo Night</option>
+            <option value="gruvbox-dark">Gruvbox Dark</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-window-tabs"></use></svg>启动时打开(所有目标共用)</span>
+          <select id="startupViewSelect">
+            <option value="">控制台(不自动打开)</option>
+            <option value="web">Pi Web 服务页</option>
+            <option value="term">SSH 终端(仅远程)</option>
+          </select>
+        </label>
+        <!-- 纯装饰:终端窗口的小样 -->
+        <div class="term-preview" aria-hidden="true">
+          <div class="term-preview-bar"><i></i><i></i><i></i></div>
+          <div class="term-preview-body mono">&gt;_</div>
+        </div>
+      </div>
+      <div class="proxy-foot">
+        <span class="muted hint"><svg class="icon" aria-hidden="true"><use href="#i-info"></use></svg><span id="termCfgHint">终端主题保存即生效(已打开的终端热切换);「启动时打开」决定应用启动后自动进入 Pi Web 服务页或 SSH 终端,每次运行只自动打开一次。</span></span>
+        <button id="termSaveBtn" class="btn primary"><svg class="icon" aria-hidden="true"><use href="#i-floppy"></use></svg>保存配置</button>
+      </div>
+    </section>
+
+    <!-- 块四:代理设置(每个目标各一份(本机 / 每台远程),跟随当前目标显示) -->
+    <section class="card card-full">
+      <div class="card-head">
+        <h2>
+          <span class="card-tile"><svg class="icon" aria-hidden="true"><use href="#i-network"></use></svg></span>
+          <span class="card-title"><strong>代理</strong>设置 <span class="muted" id="proxyScope"></span></span>
+          <span class="card-sub">配置代理服务器和访问规则</span>
+        </h2>
       </div>
       <div class="form-grid proxy-table">
         <label class="field">
-          <span class="field-label">代理协议</span>
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-link"></use></svg>代理协议</span>
           <select id="proxyProtoSelect">
             <option value="http">HTTP / HTTPS</option>
             <option value="socks5">SOCKS5</option>
@@ -226,33 +306,25 @@
           </select>
         </label>
         <label class="field">
-          <span class="field-label">代理服务器</span>
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-server"></use></svg>代理服务器</span>
           <input type="text" id="proxyHostInput" placeholder="172.21.170.62" autocomplete="off" />
         </label>
         <label class="field">
-          <span class="field-label">代理端口</span>
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-db"></use></svg>代理端口</span>
           <input type="number" id="proxyPortInput" placeholder="10808" min="1" max="65535" />
         </label>
         <label class="field">
-          <span class="field-label">npm Registry(可选,所有目标共用)</span>
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-package"></use></svg>npm Registry(可选,所有目标共用)</span>
           <input type="text" id="registryInput" placeholder="https://registry.npmmirror.com" />
-        </label>
-        <label class="field">
-          <span class="field-label">启动时打开(所有目标共用)</span>
-          <select id="startupViewSelect">
-            <option value="">控制台(不自动打开)</option>
-            <option value="web">Pi-web 服务页</option>
-            <option value="term">SSH 终端(仅远程)</option>
-          </select>
         </label>
       </div>
       <label class="field proxy-bypass">
-        <span class="field-label">不代理的地址列表(每行一条,支持通配符与网段)</span>
+        <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-network"></use></svg>不代理的地址列表(每行一条,支持通配符与网段)</span>
         <textarea id="proxyBypassInput" rows="4" spellcheck="false" placeholder="192.168.0.0/16&#10;172.16.0.0/12&#10;10.0.0.0/8&#10;*.internal.example.com"></textarea>
       </label>
       <div class="proxy-foot">
         <span class="muted hint" id="proxyHint"></span>
-        <button id="saveConfigBtn" class="btn primary">保存设置</button>
+        <button id="saveConfigBtn" class="btn primary"><svg class="icon" aria-hidden="true"><use href="#i-floppy"></use></svg>保存配置</button>
       </div>
     </section>
   </main>
@@ -261,29 +333,33 @@
   <div id="remoteModal" class="modal-overlay" hidden>
     <div class="modal-card">
       <div class="card-head">
-        <h2>远程服务器 <span class="muted">SSH 连接 · 多服务器管理</span></h2>
+        <h2>
+          <span class="card-tile"><svg class="icon" aria-hidden="true"><use href="#i-server-connection"></use></svg></span>
+          <span class="card-title"><strong>远程服务器</strong></span>
+          <span class="card-sub">SSH 连接 · 多服务器管理</span>
+        </h2>
         <div class="card-actions">
           <span id="remoteConnBadge" class="badge badge-idle" title="">未测试</span>
-          <button id="modalCloseBtn" class="btn ghost sm">关闭</button>
+          <button id="modalCloseBtn" class="btn ghost sm"><svg class="icon" aria-hidden="true"><use href="#i-xmark"></use></svg>关闭</button>
         </div>
       </div>
       <div class="form-row remote-picker-row">
-        <label class="field" style="flex:1">
+        <label class="field">
           <span class="field-label">服务器(按 IP 管理,可创建多台,各自独立运行)</span>
           <div class="remote-picker">
             <select id="remoteSelect"></select>
-            <button id="remoteAddBtn" class="btn ghost sm" title="新增一台远程服务器">新增</button>
-            <button id="remoteDelBtn" class="btn danger sm" title="删除当前选中的服务器档案">删除</button>
+            <button id="remoteAddBtn" class="btn sm" title="新增一台远程服务器"><svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg>新增</button>
+            <button id="remoteDelBtn" class="btn danger sm" title="删除当前选中的服务器档案"><svg class="icon" aria-hidden="true"><use href="#i-xmark"></use></svg>删除</button>
           </div>
         </label>
       </div>
       <div class="form-grid">
         <label class="field">
-          <span class="field-label">主机</span>
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg>主机</span>
           <input type="text" id="remoteHostInput" placeholder="192.168.1.100 或主机名" />
         </label>
         <label class="field">
-          <span class="field-label">SSH 端口</span>
+          <span class="field-label"><svg class="icon" aria-hidden="true"><use href="#i-db"></use></svg>SSH 端口</span>
           <input type="number" id="remoteSshPortInput" min="1" max="65535" placeholder="22" />
         </label>
         <label class="field">
@@ -308,9 +384,9 @@
       </div>
       <div class="proxy-foot">
         <span class="muted hint">SSH 仅作管理通道(检测/安装/启停);服务页直接访问 http://主机:端口。支持私钥或密码认证;首次连接记录主机指纹(TOFU)。</span>
-        <div class="btn-row" style="margin:0">
-          <button id="remoteTestBtn" class="btn ghost sm">测试连接</button>
-          <button id="remoteSaveBtn" class="btn primary sm">保存远程配置</button>
+        <div class="btn-row">
+          <button id="remoteTestBtn" class="btn ghost sm"><svg class="icon" aria-hidden="true"><use href="#i-server-connection"></use></svg>测试连接</button>
+          <button id="remoteSaveBtn" class="btn primary sm"><svg class="icon" aria-hidden="true"><use href="#i-floppy"></use></svg>保存远程配置</button>
         </div>
       </div>
     </div>
@@ -320,10 +396,13 @@
   <div id="logModal" class="modal-overlay" hidden>
     <div class="modal-card log-modal">
       <div class="card-head">
-        <h2 id="logModalTitle">日志</h2>
+        <h2>
+          <span class="card-tile"><svg class="icon" aria-hidden="true"><use href="#i-page"></use></svg></span>
+          <span class="card-title"><strong id="logModalTitle">日志</strong></span>
+        </h2>
         <div class="card-actions">
-          <button id="logCopyBtn" class="btn ghost sm">复制</button>
-          <button id="logCloseBtn" class="btn ghost sm">关闭</button>
+          <button id="logCopyBtn" class="btn ghost sm"><svg class="icon" aria-hidden="true"><use href="#i-copy"></use></svg>复制</button>
+          <button id="logCloseBtn" class="btn ghost sm"><svg class="icon" aria-hidden="true"><use href="#i-xmark"></use></svg>关闭</button>
         </div>
       </div>
       <pre id="logModalContent" class="log log-modal-content"></pre>
@@ -334,14 +413,15 @@
   <div id="confirmModal" class="modal-overlay confirm-overlay" hidden>
     <div class="modal-card confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage confirmDetail">
       <div class="confirm-heading">
-        <span id="confirmMark" class="confirm-mark" aria-hidden="true">!</span>
+        <span id="confirmMark" class="confirm-mark" aria-hidden="true"><svg class="icon mark-warn"><use href="#i-warning-circle"></use></svg><svg class="icon mark-info"><use href="#i-help-circle"></use></svg></span>
         <h2 id="confirmTitle"></h2>
       </div>
       <p id="confirmMessage" class="confirm-message"></p>
       <p id="confirmDetail" class="confirm-detail" hidden></p>
       <div class="confirm-actions">
-        <button id="confirmCancelBtn" class="btn" type="button">取消</button>
-        <button id="confirmOkBtn" class="btn danger-solid" type="button"></button>
+        <button id="confirmCancelBtn" class="btn" type="button"><svg class="icon" aria-hidden="true"><use href="#i-xmark-circle"></use></svg>取消</button>
+        <!-- 确认键的文字与图标由 app.js 的 confirmAction 按动作写入(危险操作 = 警示三角,其余 = 对勾) -->
+        <button id="confirmOkBtn" class="btn danger-solid" type="button"><svg class="icon" aria-hidden="true"><use id="confirmOkIcon" href="#i-warning"></use></svg><span id="confirmOkLabel"></span></button>
       </div>
     </div>
   </div>
@@ -349,36 +429,19 @@
   <!-- ============ 内嵌 Web 视图 ============ -->
   <section id="webView" hidden>
     <div class="webview-bar">
-      <button id="backBtn" class="btn ghost sm">← 控制台</button>
+      <button id="backBtn" class="btn ghost sm tool-btn" title="返回控制台" aria-label="返回控制台"><svg class="icon" aria-hidden="true"><use href="#i-arrow-left"></use></svg><span>控制台</span></button>
       <span id="webUrl" class="mono"></span>
-      <button id="webTermBtn" class="btn ghost sm icon-btn" title="切换到 SSH 终端(当前服务器;终端会话在两视图间切换时保留)" aria-label="切换到 SSH 终端">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="4 17 10 11 4 5"></polyline>
-          <line x1="12" y1="19" x2="20" y2="19"></line>
-        </svg>
-        <span>终端</span>
+      <button id="webTermBtn" class="btn ghost sm tool-btn" title="切换到 SSH 终端(当前服务器;终端会话在两视图间切换时保留)" aria-label="切换到 SSH 终端">
+        <svg class="icon" aria-hidden="true"><use href="#i-terminal"></use></svg><span>终端</span>
       </button>
-      <button id="openEditorBtn" class="btn ghost sm icon-btn" title="在编辑器中打开 pi-web 当前项目(本机:VS Code;远程:code-server)" aria-label="在编辑器中打开当前项目">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <path d="m16 18 6-6-6-6"></path>
-          <path d="m8 6-6 6 6 6"></path>
-        </svg>
-        <span>编辑器</span>
+      <button id="openEditorBtn" class="btn ghost sm tool-btn" title="在编辑器中打开 Pi Web 当前项目(本机:VS Code;远程:code-server)" aria-label="在编辑器中打开当前项目">
+        <svg class="icon" aria-hidden="true"><use href="#i-code"></use></svg><span>编辑器</span>
       </button>
-      <button id="refreshBtn" class="btn ghost sm icon-btn" title="刷新页面" aria-label="刷新页面">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="23 4 23 10 17 10"></polyline>
-          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-        </svg>
-        <span>刷新</span>
+      <button id="refreshBtn" class="btn ghost sm tool-btn" title="刷新页面" aria-label="刷新页面">
+        <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg><span>刷新</span>
       </button>
-      <button id="openBrowserBtn2" class="btn ghost sm icon-btn" title="在系统默认浏览器中打开" aria-label="在浏览器打开">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-          <polyline points="15 3 21 3 21 9"></polyline>
-          <line x1="10" y1="14" x2="21" y2="3"></line>
-        </svg>
-        <span>浏览器</span>
+      <button id="openBrowserBtn2" class="btn ghost sm tool-btn" title="在系统默认浏览器中打开" aria-label="在浏览器打开">
+        <svg class="icon" aria-hidden="true"><use href="#i-browser"></use></svg><span>浏览器</span>
       </button>
     </div>
     <webview id="wv" src="about:blank" preload="../webview-preload.js" allowpopups></webview>
@@ -387,26 +450,21 @@
   <!-- ============ SSH 终端视图(远程交互式 shell) ============ -->
   <section id="termView" hidden>
     <div class="term-bar">
-      <button id="termBackBtn" class="btn ghost sm">← 控制台</button>
+      <button id="termBackBtn" class="btn ghost sm tool-btn" title="返回控制台" aria-label="返回控制台"><svg class="icon" aria-hidden="true"><use href="#i-arrow-left"></use></svg><span>控制台</span></button>
       <span id="termTitle" class="mono"></span>
       <span id="termStatusDot" class="dot" title="会话状态"></span>
       <span class="term-bar-flex"></span>
-      <button id="termWebBtn" class="btn ghost sm icon-btn" title="切换到 pi-web 服务页(终端会话在两视图间切换时保留)" aria-label="切换到 pi-web 服务页">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="4" width="20" height="14" rx="2"></rect>
-          <path d="M8 21h8"></path>
-          <path d="M12 18v3"></path>
-        </svg>
-        <span>Pi-web</span>
+      <button id="termWebBtn" class="btn ghost sm tool-btn" title="切换到 Pi Web 服务页(终端会话在两视图间切换时保留)" aria-label="切换到 Pi Web 服务页">
+        <svg class="icon" aria-hidden="true"><use href="#i-computer"></use></svg><span>Pi Web</span>
       </button>
-      <button id="termReconnectBtn" class="btn ghost sm" title="断开后重新连接 SSH 并开新会话">重连</button>
+      <button id="termReconnectBtn" class="btn ghost sm tool-btn" title="断开后重新连接 SSH 并开新会话"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg><span>重连</span></button>
     </div>
     <div id="termMount"></div>
     <div id="termHint" class="term-hint">Ctrl+V:粘贴文本;剪贴板为截图/复制的文件时,自动上传到服务器 /tmp 并把路径填入输入行</div>
     <div id="termOverlay" hidden>
       <div class="term-overlay-card">
         <p id="termOverlayText">已断开</p>
-        <button id="termOverlayReconnect" class="btn primary sm">重连</button>
+        <button id="termOverlayReconnect" class="btn primary sm"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>重连</button>
       </div>
     </div>
   </section>

@@ -124,7 +124,7 @@ async function main() {
     })
   );
   // 清掉上次可能残留的上传产物
-  await ssh('rm -f /tmp/pi-paste-*.png /tmp/runtime-*.txt');
+  await ssh('rm -rf /tmp/pi-paste-*/; rm -f /tmp/runtime-*.txt'); // 每次上传一个独立目录,整个清掉
 
   app = spawn(ELECTRON, ['.', `--user-data-dir=${USER_DATA}`, `--remote-debugging-port=${DEBUG_PORT}`], { cwd: ROOT, stdio: 'ignore' });
   const wsUrl = await withTimeout(waitPage(), 40000, 'Electron 启动');

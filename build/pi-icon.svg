@@ -1,21 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
-  <rect width="800" height="800" rx="120" fill="#09090b"/>
-  <path fill="#fff" fill-rule="evenodd" d="
-    M165.29 165.29
-    H517.36
-    V400
-    H400
-    V517.36
-    H282.65
-    V634.72
-    H165.29
-    Z
-    M282.65 282.65
-    V400
-    H400
-    V282.65
-    Z
-  "/>
-  <path fill="#fff" d="M517.36 400 H634.72 V634.72 H517.36 Z"/>
+<!-- 应用图标母版:三色 π + 星芒,深色渐变圆角底板。由产品方提供的 pi-enhanced.svg 改造:
+     画布改为正方形 116×116(应用图标必须方正)、底板改圆角、图形整体居中(内容边界 20..96)。
+     外层不放 width/height,让 scripts/build-icon.js 里以整页铺满 800×800 窗口的方式光栅化 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 116 116">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="116" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#11141B"/>
+      <stop offset="1" stop-color="#0D1016"/>
+    </linearGradient>
+  </defs>
+  <rect width="116" height="116" rx="24" fill="url(#bg)"/>
+  <g transform="translate(0 4)">
+    <rect x="20" y="34" width="18" height="17" rx="4" fill="#F4B83F"/>
+    <path d="M42 34H59.5C72.2 34 82 43.6 82 56.8C82 70.1 72.2 80 59.5 80H45V65H59C64.2 65 67 61.7 67 56.8C67 52 64.2 49 59 49H42V34Z" fill="#F47D70"/>
+    <path d="M20 59C20 56.8 21.8 55 24 55H35C37.2 55 39 56.8 39 59V88C39 90.2 37.2 92 35 92H24C21.8 92 20 90.2 20 88V59Z" fill="#4DA9CC"/>
+    <path d="M86 16C87.2 22.1 90 25.2 96 28C90 30.8 87.2 33.9 86 40C84.8 33.9 82 30.8 76 28C82 25.2 84.8 22.1 86 16Z" fill="#F4B83F"/>
+  </g>
 </svg>

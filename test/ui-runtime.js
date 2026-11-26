@@ -1,7 +1,7 @@
-// 控制台三大块 / Code Server 配置卡 / 启动视图 运行时验证(手动 E2E:真实 Electron 实例 + 真实 SSH)。
+// 控制台卡片 / Code Server 配置卡 / 启动视图 运行时验证(手动 E2E:真实 Electron 实例 + 真实 SSH)。
 // 运行:node test/ui-runtime.js [user@host](默认 bk@172.16.10.131)
-// 验证:①启动视图(startupView=term 直达终端)②控制台三大块结构 ③cs 卡真实检测远程
-// ④终端→服务页按钮在服务未启动时的提示路径 ⑤无页面错误。实例用独立 --user-data-dir,结束强杀并清理。
+// 验证:①启动视图(startupView=term 直达终端)②终端「Pi Web」按钮跟随服务状态 ③控制台卡片结构 ④cs 卡真实检测远程
+// ⑤无页面错误。实例用独立 --user-data-dir,结束强杀并清理。
 'use strict';
 
 const fs = require('fs');
@@ -107,21 +107,26 @@ async function main() {
   );
   check(true, '启动视图=SSH 终端:应用启动直接进入终端并渲染远程输出');
 
-  // 2) 服务未启动时,终端里的「Pi-web」按钮:提示而不切换
+  // 2) 终端工具栏的「Pi Web」按钮跟随 Pi Web 服务状态:进入终端时刷新状态,服务未运行则置灰
   await sleep(1500);
-  await ev("document.querySelector('#termMount textarea') && document.querySelector('#termMount textarea').focus()");
-  await ev("document.getElementById('termWebBtn').click()");
-  await sleep(800);
-  const stillTerm = await ev("document.getElementById('termView').hidden === false");
-  const toastSrv = await ev("Array.from(document.querySelectorAll('#toastWrap .toast')).some((t) => /服务未启动/.test(t.textContent))");
-  check(stillTerm && toastSrv, '服务未启动:终端→Pi-web 按钮提示「服务未启动」,不切视图');
+  const srvNow = await ev('curServer()');
+  const btnOff = await ev("document.getElementById('termWebBtn').disabled");
+  check(btnOff === !(srvNow.running && srvNow.url), `终端「Pi Web」按钮与 Pi Web 服务状态一致(运行中=${srvNow.running})`, JSON.stringify({ running: srvNow.running, url: srvNow.url, disabled: btnOff }));
+  // 状态翻转时按钮跟着变(不启停真实服务,只改渲染层状态;查完恢复真实状态)
+  await ev("state.servers.remotes['A'] = defaultServer(); renderServer();");
+  const offStopped = await ev("document.getElementById('termWebBtn').disabled");
+  await ev("state.servers.remotes['A'] = { running: true, owned: true, external: false, url: 'http://127.0.0.1:1/' }; renderServer();");
+  const onRunning = await ev("document.getElementById('termWebBtn').disabled");
+  check(offStopped === true && onRunning === false, '服务状态翻转:按钮随之置灰 / 恢复可选');
+  await ev('refreshServerState()'); // 恢复为真实状态
+  await sleep(300);
 
-  // 3) 返回控制台:三大块齐全
+  // 3) 返回控制台:四张卡齐全
   await ev("document.getElementById('termBackBtn').click()");
   await sleep(600);
   const blocks = await ev("Array.from(document.querySelectorAll('#consoleView > section.card .card-head h2')).map((h) => h.textContent.replace(/\\s+/g, ' ').trim().split(' ')[0] + ' ' + (h.textContent.trim().split(' ')[1] || '')).map((s) => s.trim())");
   const titles = await ev("Array.from(document.querySelectorAll('#consoleView > section.card .card-head h2')).map((h) => h.textContent.replace(/\\s+/g, ' ').trim())");
-  check(titles.length === 3 && titles[0].startsWith('Pi Web 配置') && titles[1].startsWith('Code Server 配置') && titles[2].startsWith('代理设置'), '控制台为三大块:Pi Web 配置 / Code Server 配置 / 代理设置', JSON.stringify(titles));
+  check(titles.length === 4 && titles[0].startsWith('Pi Web 配置') && titles[1].startsWith('Code Server 配置') && titles[2].startsWith('终端配置') && titles[3].startsWith('代理设置'), '控制台卡片:Pi Web 配置 / Code Server 配置 / 终端配置 / 代理设置', JSON.stringify(titles));
   check((await ev("!!document.querySelector('.piweb-grid')")) === true, 'Pi Web 卡内部为 服务|环境检测 两栏');
   check((await ev("!document.getElementById('remoteCodeServerInput')")) === true, '远程弹窗已不再包含 code-server 字段');
 
@@ -151,6 +156,6 @@ main()
     }
     await sleep(800);
     try { fs.rmSync(USER_DATA, { recursive: true, force: true }); } catch {}
-    console.log(failed ? `\n${failed} 项失败` : '\n控制台三大块 / cs 配置卡 运行时验证: 全部通过');
+    console.log(failed ? `\n${failed} 项失败` : '\n控制台卡片 / cs 配置卡 / 终端工具栏 运行时验证: 全部通过');
     process.exit(failed ? 1 : 0);
   });
