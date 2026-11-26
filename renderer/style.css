@@ -39,10 +39,12 @@
   --bg-hover: rgba(255, 255, 255, 0.06);
   --bg-active: rgba(255, 255, 255, 0.10);
   --bg-well: rgba(9, 12, 17, 0.45);         /* 面板里再凹一层的列表 */
+  --bg-toast: #202833;                      /* 提示浮层:压在内容上,比面板亮一档才分得开 */
   --overlay: rgba(5, 8, 16, 0.66);
 
   /* 描边 */
   --border: #2A3545;                        /* 控件 */
+  --border-toast: #344253;                  /* 提示浮层 */
   --border-strong: #3A4759;                 /* 控件悬停 */
   --border-subtle: rgba(255, 255, 255, 0.065); /* 面板 / 行分隔:比控件描边轻 */
 
@@ -153,11 +155,12 @@ button, input, select, textarea { font-family: inherit; }
 }
 .brand { display: flex; align-items: center; gap: var(--gap-2); min-width: 0; }
 .logo { width: 28px; height: 28px; display: inline-block; border-radius: 5px; }
-.name { font-size: var(--fs-m); font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
+.name { display: inline-flex; align-items: center; height: 20px; line-height: 20px; font-size: var(--fs-m); font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
 .app-version {
-  display: inline-flex; align-items: center; height: 20px; padding: 0 6px; margin-left: 2px;
+  display: inline-flex; align-items: center; height: 20px; line-height: 20px; padding: 0 6px; margin-left: 2px;
   border-radius: 5px; background: var(--bg-hover);
-  font-family: var(--mono); font-size: var(--fs-xs); font-weight: 500; color: var(--muted);
+  /* 与产品名用同一字体的度量,避免等宽字体的字面重心偏高 */
+  font-family: var(--font); font-variant-numeric: tabular-nums; font-size: var(--fs-xs); font-weight: 500; color: var(--muted);
 }
 .topbar-right { display: flex; align-items: center; gap: var(--gap-2); }
 
@@ -605,19 +608,34 @@ select:disabled { color: var(--muted); opacity: 0.55; cursor: not-allowed; }
 /* ======================================================================
    Toast
    ====================================================================== */
+/* 底部水平居中(对照「推荐效果」)。整条都不拦截点击,只有提示框本身可点 */
 #toastWrap {
-  position: fixed; right: 20px; bottom: 20px; z-index: 100;
-  display: flex; flex-direction: column; gap: var(--gap-2);
+  position: fixed; left: 0; right: 0; bottom: 24px; z-index: 100;
+  display: flex; flex-direction: column; align-items: center; gap: var(--gap-2);
+  padding: 0 24px; pointer-events: none;
 }
+/* 单行时高 40 = 描边 1 + 内边距 10 + 行高 18 + 10 + 1;不加侧边色条,状态只由圆点表达 */
 .toast {
-  max-width: 420px; padding: 10px 14px;
-  border-radius: var(--radius-m); border: 1px solid rgba(255, 255, 255, 0.08);
-  background: #1F2834; color: var(--text); font-size: var(--fs-s); line-height: 1.5;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  display: flex; align-items: flex-start; gap: var(--gap-2);
+  max-width: min(420px, 100%); padding: 10px var(--gap-3);
+  border-radius: var(--radius-m); border: 1px solid var(--border-toast);
+  background: var(--bg-toast); color: var(--text); font-size: var(--fs-s); line-height: 18px;
+  overflow-wrap: anywhere; pointer-events: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
   animation: toast-in 0.2s var(--ease);
 }
-.toast.ok { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 3px 0 0 var(--ok); }
-.toast.err { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 3px 0 0 var(--danger); }
+/* 状态圆点:14px 实心圆(语义色)+ 底色记号,与首行文字垂直居中(margin-top = (18 - 14) / 2)。
+   data URL 里引用不到 token,色值与 :root 保持一致:圆点 = --accent / --ok / --danger,记号 = --bg-toast */
+.toast::before {
+  content: ''; flex: none; width: 14px; height: 14px; margin-top: 2px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Ccircle cx='7' cy='7' r='7' fill='%235688F5'/%3E%3Cpath d='M7 6.6v3.6' fill='none' stroke='%23202833' stroke-width='1.8' stroke-linecap='round'/%3E%3Ccircle cx='7' cy='4.2' r='1' fill='%23202833'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.toast.ok::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Ccircle cx='7' cy='7' r='7' fill='%2335C98A'/%3E%3Cpath d='M4.7 7l1.1 1.4 3-4.3' fill='none' stroke='%23202833' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.toast.err::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Ccircle cx='7' cy='7' r='7' fill='%23EC5D5D'/%3E%3Cpath d='M5.1 5.1l3.8 3.8M8.9 5.1l-3.8 3.8' fill='none' stroke='%23202833' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E");
+}
 
 /* ======================================================================
    弹窗(远程服务器 / 日志 / 操作确认)

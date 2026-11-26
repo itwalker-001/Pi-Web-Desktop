@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Pi Web 标志</title>
+  <desc id="desc">原版三色几何 π 标志，右下角叠加白色边框、三色圆点和地球图案的浏览器徽标，外围透明。</desc>
+  <defs>
+    <mask id="badge-clearance" maskUnits="userSpaceOnUse" x="0" y="0" width="800" height="800">
+      <path fill="white" d="M0 0H800V800H0Z"/>
+      <rect x="490" y="465" width="230" height="210" rx="41" fill="black"/>
+    </mask>
+  </defs>
+  <g mask="url(#badge-clearance)">
+    <path fill="#F09082" d="M165.29 165.29H517.36V400H400V282.65H165.29Z"/>
+    <path fill="#4D9ABF" d="M165.29 282.65H282.65V400H400V517.36H282.65V634.72H165.29Z"/>
+    <path fill="#F1BE58" d="M517.36 400H634.72V634.72H517.36Z"/>
+  </g>
+  <rect x="510" y="485" width="190" height="170" rx="25" fill="#101925"/>
+  <g stroke="#F1F5F9" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="510" y="485" width="190" height="170" rx="25"/>
+    <path d="M512 533H698"/>
+  </g>
+  <circle cx="538" cy="509" r="9" fill="#FF745F"/>
+  <circle cx="567" cy="509" r="9" fill="#FFC542"/>
+  <circle cx="596" cy="509" r="9" fill="#00C889"/>
+  <g stroke="#F1F5F9" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="605" cy="592" r="41"/>
+    <ellipse cx="605" cy="592" rx="17" ry="41"/>
+    <path d="M566.5 578H643.5M566.5 606H643.5"/>
+  </g>
+</svg>

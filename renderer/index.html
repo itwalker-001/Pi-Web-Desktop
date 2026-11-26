@@ -54,7 +54,7 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <img class="logo" src="../build/icons/icon-64.png" alt="Pi" />
+        <img class="logo" src="../build/pi-icon.svg" alt="Pi" />
         <span class="name">Pi Web Desktop</span>
         <span id="appVersion" class="app-version" title="桌面端版本">—</span>
       </div>
@@ -179,7 +179,7 @@
               <span class="dot" id="dot-pi" hidden></span>
             </li>
             <li class="env-item">
-              <img class="bicon" src="vendor/icons/pi-web-display.png" alt="" />
+              <img class="bicon" src="vendor/icons/pi-web.svg" alt="" />
               <span class="env-name">Pi Web <span class="muted">(@agegr/pi-web)</span></span>
               <span class="mono env-status" id="env-piweb">—</span>
               <span class="env-type" id="env-piweb-extra">全局包</span>
@@ -429,6 +429,7 @@
   <!-- ============ 内嵌 Web 视图 ============ -->
   <section id="webView" hidden>
     <div class="webview-bar">
+      <img class="logo" src="../build/pi-icon.svg" alt="Pi Web Desktop" />
       <button id="backBtn" class="btn ghost sm tool-btn" title="返回控制台" aria-label="返回控制台"><svg class="icon" aria-hidden="true"><use href="#i-arrow-left"></use></svg><span>控制台</span></button>
       <span id="webUrl" class="mono"></span>
       <button id="webTermBtn" class="btn ghost sm tool-btn" title="切换到 SSH 终端(当前服务器;终端会话在两视图间切换时保留)" aria-label="切换到 SSH 终端">

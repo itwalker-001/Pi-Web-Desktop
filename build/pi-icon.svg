@@ -1,19 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 应用图标母版:三色 π + 星芒,深色渐变圆角底板。由产品方提供的 pi-enhanced.svg 改造:
-     画布改为正方形 116×116(应用图标必须方正)、底板改圆角、图形整体居中(内容边界 20..96)。
-     外层不放 width/height,让 scripts/build-icon.js 里以整页铺满 800×800 窗口的方式光栅化 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 116 116">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="116" y2="116" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#11141B"/>
-      <stop offset="1" stop-color="#0D1016"/>
-    </linearGradient>
-  </defs>
-  <rect width="116" height="116" rx="24" fill="url(#bg)"/>
-  <g transform="translate(0 4)">
-    <rect x="20" y="34" width="18" height="17" rx="4" fill="#F4B83F"/>
-    <path d="M42 34H59.5C72.2 34 82 43.6 82 56.8C82 70.1 72.2 80 59.5 80H45V65H59C64.2 65 67 61.7 67 56.8C67 52 64.2 49 59 49H42V34Z" fill="#F47D70"/>
-    <path d="M20 59C20 56.8 21.8 55 24 55H35C37.2 55 39 56.8 39 59V88C39 90.2 37.2 92 35 92H24C21.8 92 20 90.2 20 88V59Z" fill="#4DA9CC"/>
-    <path d="M86 16C87.2 22.1 90 25.2 96 28C90 30.8 87.2 33.9 86 40C84.8 33.9 82 30.8 76 28C82 25.2 84.8 22.1 86 16Z" fill="#F4B83F"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="120 30 640 640" width="800" height="800" role="img" aria-labelledby="title desc">
+  <title id="title">Pi 星耀标志</title>
+  <desc id="desc">保留珊瑚粉、蓝色与金黄色的几何 π 标志，在右上角添加金色四角星。</desc>
+  <path fill="#F09082" d="M165.29 165.29H517.36V400H400V282.65H165.29Z"/>
+  <path fill="#4D9ABF" d="M165.29 282.65H282.65V400H400V517.36H282.65V634.72H165.29Z"/>
+  <path fill="#F1BE58" d="M517.36 400H634.72V634.72H517.36Z"/>
+  <path fill="#F1BE58" d="M619 70C610 119 589 140 540 149C533.33 150.23 533.33 159.77 540 161C589 170 610 191 619 240C620.23 246.67 629.77 246.67 631 240C640 191 661 170 710 161C716.67 159.77 716.67 150.23 710 149C661 140 640 119 631 70C629.77 63.33 620.23 63.33 619 70Z"/>
 </svg>

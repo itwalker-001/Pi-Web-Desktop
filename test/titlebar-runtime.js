@@ -21,6 +21,9 @@ const SHOTS = WITH_SHOTS ? fs.mkdtempSync(path.join(os.tmpdir(), 'pi-titlebar-sh
 const PORT = 9338;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// 「环境不满足」:页面不可见(屏幕锁定、显示器休眠、远程会话断开,或测试窗口被完全盖住),与功能失败区分开
+class EnvUnavailable extends Error {}
+
 const failures = [];
 function expect(label, actual, want) {
   const ok = String(actual) === String(want);
@@ -128,6 +131,21 @@ let app = null;
     await sleep(500);
   }
   await sleep(1200);
+  // 改完窗口尺寸后,等渲染层把布局视口宽落到实处再量、再测。页面不出帧时(visibilityState = hidden:屏幕锁定、显示器休眠、
+  // 远程会话断开,或窗口被完全盖住)布局不会更新 —— 实测窗口已经缩到 920,页面量到的视口宽仍是 1180 —— 这时按页面坐标去问
+  // 系统命中结果,关闭按钮的位置会落进旧布局的拖拽区,报出来的失败会误导人。等不到且页面不可见,就按「环境不满足」结束(退出码 2)。
+  // ms:尺寸到位后留给工具栏 / 拖拽区 / 弹窗动画的时间(沿用各步原来的等待)
+  const settle = async (wantWidth, tag, ms = 500) => {
+    for (let i = 0; i < 50 && (await ev('innerWidth')) !== wantWidth; i++) await sleep(200);
+    const got = await ev('({ w: innerWidth, vis: document.visibilityState })');
+    if (got.w !== wantWidth && got.vis !== 'visible') {
+      console.log(`\n环境不满足(${tag}):页面不可见(${got.vis}),窗口没有在出帧 —— 多半是屏幕锁定、显示器休眠、远程会话断开,或测试窗口被完全盖住。`);
+      console.log(`布局视口宽停在 ${got.w}(应为 ${wantWidth}),后面按页面坐标做的命中测试没有意义。解锁 / 让窗口露出来后重跑。`);
+      process.exitCode = 2;
+      throw new EnvUnavailable(tag);
+    }
+    await sleep(ms);
+  };
   if (SHOTS) console.log('截图目录:', SHOTS);
 
   const rectSrc = `const rect = (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, r: r.right, b: r.bottom }; };`;
@@ -139,12 +157,14 @@ let app = null;
   const TOPBAR_H = 40;
   const consoleFacts = () => ev(`(() => { ${rectSrc} ${csSrc} ${areaSrc}
     return {
-      area, innerWidth, innerHeight,
+      area, innerWidth, innerHeight, vis: document.visibilityState,
       wcoVisible: navigator.windowControlsOverlay.visible, search: location.search,
       hasClass: document.body.classList.contains('wco'),
       topbar: rect(document.querySelector('.topbar')),
       topbarRegion: cs(document.querySelector('.topbar'), '-webkit-app-region'),
       brand: rect(document.querySelector('.brand')),
+      name: rect(document.querySelector('.name')),
+      version: rect(document.getElementById('appVersion')),
       chip: rect(document.getElementById('serverChip')),
       scopeLeft: document.querySelector('.scope-bar').getBoundingClientRect().left + parseFloat(cs(document.querySelector('.scope-bar'), 'padding-left')),
       scopeTop: document.querySelector('.scope-bar').getBoundingClientRect().top,
@@ -157,13 +177,14 @@ let app = null;
     near(`${tag}状态芯片与窗口按钮的间距(页面带滚动条)`, controlsLeftOf(f) - f.chip.r, 24);
     near(`${tag}品牌居最左(与目标条左缘对齐)`, f.brand.x, f.scopeLeft);
     near(`${tag}目标条吸顶位置紧跟顶栏`, f.scopeTop, TOPBAR_H);
+    near(`${tag}产品名与版本号垂直居中对齐`, f.name.y + f.name.h / 2, f.version.y + f.version.h / 2, 0.5);
   };
 
   /* ---------- 1) 控制台视图(默认 1180 宽) ---------- */
   console.log('\n—— 控制台视图(1180 宽)——');
   const f = await consoleFacts();
   const controlsLeft = controlsLeftOf(f);
-  console.log('  基础:', JSON.stringify({ search: f.search, wcoVisible: f.wcoVisible, hasClass: f.hasClass, area: f.area, inner: [f.innerWidth, f.innerHeight] }));
+  console.log('  基础:', JSON.stringify({ search: f.search, wcoVisible: f.wcoVisible, hasClass: f.hasClass, area: f.area, inner: [f.innerWidth, f.innerHeight], vis: f.vis }));
   expect('地址带着主进程的无边框标记', f.search, '?wco=1');
   expect('系统的窗口控制叠加确实可见', f.wcoVisible, true);
   checkConsole(f, '');
@@ -187,19 +208,22 @@ let app = null;
   const extraW = outer0.w / outer0.scale - f.innerWidth;
   const extraH = outer0.h / outer0.scale - f.innerHeight;
   setWindowSize(hwnd, 920 + extraW, 700 + extraH);
-  await sleep(600);
+  await settle(920, '缩到 920 之后', 600);
   const n = await consoleFacts();
-  console.log('  基础:', JSON.stringify({ inner: [n.innerWidth, n.innerHeight], area: n.area, chipRight: n.chip.r }));
+  console.log('  基础:', JSON.stringify({ inner: [n.innerWidth, n.innerHeight], area: n.area, chipRight: n.chip.r, vis: n.vis }));
   expect('窗口已变窄', n.innerWidth, 920);
   checkConsole(n, '窄窗口:');
 
   await ev("showWeb('about:blank')");
-  await sleep(2000);
+  await settle(920, '窄窗口的服务页视图', 2000);
   const webFacts = () => ev(`(() => { ${rectSrc} ${csSrc} ${areaSrc}
     const bar = document.querySelector('.webview-bar');
     return {
       area, innerWidth,
       bar: rect(bar), barRegion: cs(bar, '-webkit-app-region'),
+      logo: rect(bar.querySelector('.logo')),
+      logoLoaded: bar.querySelector('.logo').complete && bar.querySelector('.logo').naturalWidth > 0,
+      back: rect(document.getElementById('backBtn')),
       url: rect(document.getElementById('webUrl')),
       lastBtn: rect(document.getElementById('openBrowserBtn2')),
       refresh: rect(document.getElementById('refreshBtn')),
@@ -212,6 +236,10 @@ let app = null;
     expect(`${tag}栏上按钮不参与拖拽`, w.btnRegion, 'no-drag');
     near(`${tag}最后一个按钮与窗口按钮的间距`, controlsLeftOf(w) - w.lastBtn.r, 12);
     near(`${tag}服务页内容紧接在工具栏下方`, w.wv.y, TOPBAR_H);
+    expect(`${tag}服务页工具栏 Logo 已加载`, w.logoLoaded, true);
+    near(`${tag}服务页 Logo 尺寸`, w.logo.w, 28);
+    near(`${tag}服务页 Logo 垂直居中`, w.logo.y + w.logo.h / 2, w.bar.h / 2);
+    expect(`${tag}Logo 位于控制台按钮左侧且不重叠`, w.logo.r <= w.back.x, true);
   };
   const wn = await webFacts();
   console.log('  基础:', JSON.stringify({ innerWidth: wn.innerWidth, lastBtnRight: wn.lastBtn.r, controlsLeft: controlsLeftOf(wn) }));
@@ -220,14 +248,14 @@ let app = null;
   probe(hwnd, [[200, 20]], 'web-narrow');
 
   setWindowSize(hwnd, outer0.w / outer0.scale, outer0.h / outer0.scale);
-  await sleep(600);
+  await settle(f.innerWidth, '还原窗口尺寸之后', 600);
   await ev('showConsole()');
   await sleep(500);
 
   /* ---------- 3) 服务页视图(紧凑工具栏) ---------- */
   console.log('\n—— 服务页视图 ——');
   await ev("showWeb('about:blank')");
-  await sleep(2000);
+  await settle(f.innerWidth, '服务页视图', 2000);
   const w = await webFacts();
   const wLeft = controlsLeftOf(w);
   checkWebBar(w, '');
@@ -245,7 +273,7 @@ let app = null;
   /* ---------- 4) 终端视图(紧凑工具栏) ---------- */
   console.log('\n—— 终端视图 ——');
   await ev('showTerm()');
-  await sleep(1500);
+  await settle(f.innerWidth, '终端视图', 1500);
   const t = await ev(`(() => { ${rectSrc} ${csSrc} ${areaSrc}
     const bar = document.querySelector('.term-bar');
     return {
@@ -277,7 +305,7 @@ let app = null;
   /* ---------- 5) 弹窗打开时 ---------- */
   console.log('\n—— 弹窗打开时 ——');
   await ev('showConsole(); openServersModal();');
-  await sleep(1000);
+  await settle(f.innerWidth, '弹窗打开时', 1000);
   const m = await ev(`(() => { ${rectSrc} ${areaSrc}
     return { area, innerWidth, card: rect(document.querySelector('#remoteModal .modal-card')), open: !document.getElementById('remoteModal').hidden }; })()`);
   const mLeft = controlsLeftOf(m);
@@ -294,8 +322,11 @@ let app = null;
   console.log(failures.length ? `\n${failures.length} 项失败` : '\n无边框窗口: 全部通过');
   process.exitCode = failures.length ? 1 : 0;
 })().catch((e) => {
-  console.error('RUNTIME ERR:', e.stack || e.message);
-  process.exitCode = 1;
+  // 环境不满足的说明已经在 settle 里打印过,退出码 2;其余才算运行出错
+  if (!(e instanceof EnvUnavailable)) {
+    console.error('RUNTIME ERR:', e.stack || e.message);
+    process.exitCode = 1;
+  }
 }).finally(async () => {
   // 只结束这次测试启动的实例(按 PID);不按进程名结束,否则会波及用户自己开着的程序
   if (app && app.pid) {
