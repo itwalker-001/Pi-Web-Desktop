@@ -855,8 +855,8 @@ const termState = {
   pasting: false,     // Alt+V 处理中(上传耗时,防重入)
 };
 
-// 输入框内换行的按键序列(Esc+CR):Claude Code 等程序识别为「换行不提交」,与 Alt+Enter 发出的相同。
-// 普通 shell 只是丢弃它,所以映射 Shift+Enter 没有副作用
+// 输入框内换行的按键序列(Esc+CR):Claude Code 识别为「换行不提交」,与 Alt+Enter 发出的相同。
+// 普通 shell 只是丢弃它,所以映射 Shift+Enter 没有副作用;别的程序表现不一(pi 1.6 实测仍当作提交,与映射前相同)
 const TERM_NEWLINE = '\x1b\r';
 
 // 需要引号才安全时用单引号包住(与主进程 remote.js 的 shellQuote 同规则)
@@ -1091,7 +1091,7 @@ async function startTermSession(t) {
   fit.fit();
   // 下面三项是增强,逐项兜底:任何一项出问题都不该让终端开不出来
   // Unicode 11 宽度表:emoji 按两格排。xterm 默认的表把 emoji 算作一格,而实际字形约两格多,中文混排时
-  // 会压住后面的字;Claude Code / pi 自己排版也按两格算,两边一致才不会在行尾错位
+  // 会压住后面的字;按 emoji 两格排版的程序(Claude Code 等)与终端两边一致,才不会在行尾错位
   try {
     term.loadAddon(new Unicode11Addon.Unicode11Addon());
     term.unicode.activeVersion = '11';
