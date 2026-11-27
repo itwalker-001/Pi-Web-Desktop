@@ -140,25 +140,14 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // GPU 初始化失败(如 VMware 下 MESA 加载失败)时 ready-to-show 可能永不触发,
-  // 窗口会以 show:false 状态滞留并占住单实例锁。按时间分级处理:
-  //   3s 后仍不可见 → 强制 show(内容未就绪时由 backgroundColor 兜底)
-  //  10s 后仍不可见 → 看门狗退出释放锁;未试过禁用 GPU 则带 --disable-gpu 自愈重启
+  // 就绪即显示,显示前先最大化:默认占满屏幕打开(保留任务栏),上面的 width/height 是点「还原」后回到的尺寸。
+  // BrowserWindow 的 maximize 选项对 show:false 的窗口不生效(实测窗口仍是 1180×820),只能在这里做
   mainWindow.once('ready-to-show', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
-  });
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.maximize();
       mainWindow.show();
     }
-  }, 3000);
-  setTimeout(() => {
-    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
-    if (!process.argv.includes('--disable-gpu')) {
-      app.relaunch({ args: process.argv.slice(1).concat('--disable-gpu') });
-    }
-    app.exit(1);
-  }, 10000);
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;

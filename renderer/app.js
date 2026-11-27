@@ -840,7 +840,7 @@ function showConsole() {
   $('consoleView').hidden = false;
 }
 
-/* ---------------- SSH 终端(远程交互式 shell,Alt+V 上传 /tmp) ---------------- */
+/* ---------------- SSH 终端(远程交互式 shell,Ctrl+V 上传 /tmp) ---------------- */
 
 // 单会话模型:一次只有一个终端会话,关闭视图即停止会话;重连 = 销毁旧会话再开新的
 const termState = {
@@ -852,7 +852,7 @@ const termState = {
   facts: null,        // 会话的实际形态({ proxy, tmux, tmuxVersion }),主进程开会话时带回
   resizeTimer: 0,
   resizeObserver: null,
-  pasting: false,     // Alt+V 处理中(上传耗时,防重入)
+  pasting: false,     // Ctrl+V 处理中(上传耗时,防重入)
 };
 
 // 输入框内换行的按键序列(Esc+CR):Claude Code 识别为「换行不提交」,与 Alt+Enter 发出的相同。
@@ -1105,6 +1105,7 @@ async function startTermSession(t) {
     console.warn('终端链接识别未能启用:', err);
   }
   loadTermRenderer(term);
+  installTermClipboard(term);
 
   termState.term = term;
   termState.fit = fit;
@@ -1142,6 +1143,15 @@ async function startTermSession(t) {
   // 键入 → PTY。粘贴的文本也走这里(xterm 的 paste 是输入语义)
   term.onData(sendTermInput);
 
+  // 接管一次按键:返回 false 只是「不再交给 xterm」—— xterm 6 不会因此阻止浏览器的默认动作,得自己阻止。
+  // 2026-11-26 实测漏掉这一步的后果:Ctrl+V 被应用接管后,浏览器照样派发原生 paste,xterm 自己的监听器立刻把
+  // 系统剪贴板里的文本粘进终端;两三秒后智能粘贴再把同一段文本粘一遍,同一份内容出现两次(第二份落在用户
+  // 已经回车之后的新行上)。Shift+Enter 同理,默认动作会往 xterm 的隐藏输入框里塞一个换行
+  const takeOverKey = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    return false;
+  };
   term.attachCustomKeyEventHandler((e) => {
     // Shift+Enter → 换行序列。xterm 默认把它发成与 Enter 相同的 \r,程序无从区分只能当提交;
     // 只在配置开启时映射(在 vim 这类程序里 Esc+Enter 的含义会变,用户可以关掉)。
@@ -1150,13 +1160,14 @@ async function startTermSession(t) {
     if ((e.type === 'keydown' || e.type === 'keypress') && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Enter') {
       if (state.cfg && state.cfg.termShiftEnter === false) return true;
       if (e.type === 'keydown') sendTermInput(TERM_NEWLINE);
-      return false;
+      return takeOverKey(e);
     }
     if (e.type !== 'keydown') return true;
-    // Alt+V 智能粘贴(截图/文件上传 /tmp 并填路径,文本按普通粘贴);Ctrl+V 放行,^V 原样给里层程序
-    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && String(e.key).toLowerCase() === 'v') {
+    // Ctrl+V 智能粘贴(截图/文件上传 /tmp 并填路径,文本按普通粘贴)。AltGr(Ctrl+Alt)与 Ctrl+Shift+V 不拦:
+    // 前者是欧洲键盘的字符输入,后者由 xterm 自己按纯文本粘贴
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && String(e.key).toLowerCase() === 'v') {
       handleTermPaste();
-      return false;
+      return takeOverKey(e);
     }
     return true;
   });
@@ -1205,6 +1216,40 @@ function loadTermRenderer(term) {
   }
 }
 
+// OSC 52:远端程序请求把文本写进本机剪贴板。herdr / tmux 这类自己接管鼠标的全屏程序,「选中即复制」靠它把文本送回本机;
+// 终端不处理的话复制会静默失败,本机剪贴板停在原来的内容上(比如一张旧截图),随后 Ctrl+V 送上去的就是那张旧图。
+// 只实现「远端 → 本机」的写入;远端发来的读取请求(负载为 ?)不应答 —— 不让服务器上的程序读走本机剪贴板
+function installTermClipboard(term) {
+  try {
+    term.parser.registerOscHandler(52, (data) => {
+      const sep = data.indexOf(';');
+      const selection = sep >= 0 ? data.slice(0, sep) : '';
+      const payload = sep >= 0 ? data.slice(sep + 1) : '';
+      // 只认系统剪贴板选择区(c,或留空);p / q / 0-7 是 X11 的其它选择区,Windows 上没有对应物
+      if (selection && !selection.includes('c')) return true;
+      if (payload === '?') return true;
+      const text = osc52Decode(payload);
+      if (text !== null) window.piApi.setClipboardText(text).catch(() => {});
+      return true;
+    });
+  } catch (err) {
+    console.warn('终端的 OSC 52 剪贴板支持未能启用:', err);
+  }
+}
+
+// OSC 52 的负载是 base64 的 UTF-8 文本。内容必须能原样编回去(忽略空白与末尾的填充等号):
+// 半截或夹带非法字符的数据不写进剪贴板。非法时返回 null,空负载返回 ''(按约定 = 清空剪贴板)
+function osc52Decode(payload) {
+  try {
+    const bare = payload.replace(/\s+/g, '').replace(/=+$/, '');
+    const bin = atob(bare);
+    if (btoa(bin).replace(/=+$/, '') !== bare) return null;
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
+  } catch {
+    return null;
+  }
+}
+
 // 状态点与「← 控制台」的说明文字:带出这个会话的实际形态(有没有继承代理、是否在 tmux 里)
 function renderTermFacts() {
   const f = termState.facts;
@@ -1220,7 +1265,7 @@ function renderTermFacts() {
 
 // 终端底部的快捷键提示
 function renderTermHint() {
-  $('termHint').textContent = 'Alt+V:粘贴;截图/文件自动上传到 /tmp 并填入路径';
+  $('termHint').textContent = 'Ctrl+V:粘贴;截图/文件自动上传到 /tmp 并填入路径';
 }
 
 async function handleTermPaste() {

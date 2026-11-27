@@ -23,6 +23,23 @@ function check(cond, msg, detail) {
   console.log(`${cond ? 'PASS' : 'FAIL'}: ${msg}${cond || detail === undefined ? '' : `  [${detail}]`}`);
   if (!cond) failed += 1;
 }
+// 模拟浏览器往 xterm 的输入框派发一次按键。真实 xterm 6 调用完自定义处理器,不管它返回 true / false,
+// 都不会替它阻止浏览器的默认动作;只要事件没被 preventDefault,浏览器就照常执行 ——
+// Ctrl+V / Ctrl+Shift+V 的默认动作是原生 paste(xterm 自己的监听器把系统剪贴板里的文本粘进终端)。
+// 2026-11-26 踩过:应用接管了 Ctrl+V 却没阻止默认动作,结果同一段文本粘了两份
+function pressKey(t, init, clipText = '') {
+  const ev = {
+    prevented: false,
+    stopped: false,
+    preventDefault() { this.prevented = true; },
+    stopPropagation() { this.stopped = true; },
+    ...init,
+  };
+  const handled = t.keyHandler(ev);
+  const pasteCombo = (ev.ctrlKey || ev.metaKey) && !ev.altKey && String(ev.key).toLowerCase() === 'v';
+  if (!ev.prevented && ev.type === 'keydown' && pasteCombo && clipText) t.paste(clipText); // 浏览器派发的原生 paste 事件
+  return { handled, ev };
+}
 
 /* ---------- 假 DOM:同一个 id 始终返回同一个元素 ---------- */
 function makeEl(tag) {
@@ -135,6 +152,7 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
   const termCalls = []; // 渲染层发起的 term:*
   const term = { pasteReply: { ok: true, type: 'text', text: '' }, startReply: null, ctorThrows: false }; // termPaste / termStart 的应答;ctorThrows 让 xterm 构造失败
   const openedLinks = []; // 交给系统浏览器打开的地址
+  const clipWrites = []; // 经 OSC 52 写进系统剪贴板的文本
   // xterm addon 替身:每个实例都记进 addons.created;addons.webglThrows 模拟拿不到 WebGL 上下文;
   // addons.fail = 某个 kind 时,该 addon 在 activate 时抛错
   const addons = { created: [], webglThrows: false, fail: '' };
@@ -161,6 +179,8 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
     }
     // 与真实 xterm 一致:loadAddon 时激活;paste 最终也走 onData(程序开着括号粘贴模式时内容外面包一层标记)
     loadAddon(a) { this.addons.push(a); if (a.activate) a.activate(this); }
+    // OSC 处理器登记处(真实 xterm 的 term.parser.registerOscHandler);测试里直接调用 osc[52] 模拟远端发来的序列
+    parser = { osc: {}, registerOscHandler(code, cb) { this.osc[code] = cb; return { dispose() {} }; } };
     open() {}
     focus() {}
     write(s) { this.display += s; }
@@ -227,7 +247,7 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
     console: Object.assign({}, console, { warn: (...a) => warns.push(a.map((x) => String((x && x.message) || x)).join(' ')) }), // warn 记下来断言,不刷屏
     document, setTimeout: (...a) => { timers.push(a[1]); return setTimeout(...a); }, clearTimeout, setInterval, clearInterval,
     fetch: async () => { throw new Error('offline'); },
-    AbortSignal, URL, URLSearchParams, TextDecoder,
+    AbortSignal, URL, URLSearchParams, TextDecoder, atob, btoa,
     confirm: () => true,
     location: { href: 'file:///C:/app/renderer/index.html', search: wco ? '?wco=1' : '' }, // 无边框窗口:主进程把决定随地址带来
     getComputedStyle: () => ({ getPropertyValue: () => '' }),
@@ -255,6 +275,7 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
       confirmInstallCodeServer: async (arg) => { editor.confirms += 1; editor.confirmArg = arg; return editor.confirmReply instanceof Error ? Promise.reject(editor.confirmReply) : editor.confirm; },
       installCodeServer: async () => { editor.installs += 1; return editor.installReply; },
       copyText: async (text) => { editor.copied.push(text); return { ok: editor.copyOk }; },
+      setClipboardText: async (text) => { clipWrites.push(text); return { ok: true }; },
       runUpdate: async () => ({ ok: false, error: '(测试中不执行更新)' }),
       termStart: async (arg) => {
         termCalls.push({ api: 'start', arg });
@@ -291,7 +312,7 @@ function boot(cfgOverrides = {}, { wco = false } = {}) {
   };
   return {
     ctx, cfg, behavior, calls, starts, editorOpens, editor, timers, hooks, document, settle, termCalls, terminals, term, cs, csCalls,
-    openedLinks, addons, warns,
+    openedLinks, addons, warns, clipWrites,
     S: (expr) => vm.runInContext(expr, ctx),
     el: (id) => document.getElementById(id),
   };
@@ -673,7 +694,7 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   appC.hooks.updateLog({ target: 'pi-web', line: 'npm install\n' });
   check(C("getLogText('update')").includes('[code-server] 下载中 3.2%\n') && !C("getLogText('update')").includes('[Pi Web] [code-server]'), 'T12k 「更新日志」里 code-server 的行带自己的标签,不会被标成 Pi Web');
 
-  // T13) SSH 终端:入口开关、真实调用形态、Alt+V 三态、断开与回收
+  // T13) SSH 终端:入口开关、真实调用形态、Ctrl+V 三态、断开与回收
   const app2 = boot({ mode: 'remote', activeRemoteId: 'A' });
   await app2.settle();
   check(app2.el('termOpenBtn').disabled === false, 'T13 远程模式:终端入口可用');
@@ -692,20 +713,25 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   await app2.settle();
   check(t0.display === '你好', 'T13 会话输出写入 xterm(UTF-8 解码)', t0.display);
   app2.term.pasteReply = { ok: true, type: 'text', text: 'hello' };
-  check(t0.keyHandler({ type: 'keydown', ctrlKey: true, key: 'v' }) === true, 'T13 Ctrl+V 不再拦截(原样发给终端,^V 归里层程序)');
-  check(t0.keyHandler({ type: 'keydown', ctrlKey: true, altKey: true, key: 'v' }) === true, 'T13 AltGr(Ctrl+Alt)+V 不拦截(欧洲键盘布局)');
-  check(t0.keyHandler({ type: 'keydown', altKey: true, shiftKey: true, key: 'v' }) === true, 'T13 Alt+Shift+V 不拦截');
+  const altV = pressKey(t0, { type: 'keydown', altKey: true, key: 'v' }, 'hello');
+  const altGrV = pressKey(t0, { type: 'keydown', ctrlKey: true, altKey: true, key: 'v' }, 'hello');
+  const ctrlShiftV = pressKey(t0, { type: 'keydown', ctrlKey: true, shiftKey: true, key: 'v' }, 'hello');
   await app2.settle();
-  check(t0.pasted.length === 0 && app2.termCalls.every((c) => c.api !== 'paste'), 'T13 Ctrl+V 不触发剪贴板仲裁(不读剪贴板、不上传)', app2.termCalls);
-  check(t0.keyHandler({ type: 'keydown', altKey: true, key: 'v' }) === false, 'T13 Alt+V 被拦截(智能粘贴/上传)');
+  check(altV.handled === true && altGrV.handled === true && ctrlShiftV.handled === true, 'T13 Alt+V / AltGr(Ctrl+Alt)+V / Ctrl+Shift+V 都不拦截(原样交给浏览器与 xterm)');
+  check(app2.termCalls.every((c) => c.api !== 'paste'), 'T13 这三个组合不走应用的剪贴板仲裁(不读剪贴板、不上传)', app2.termCalls);
+  check(t0.pasted.length === 1 && t0.pasted[0] === 'hello', 'T13 其中只有 Ctrl+Shift+V 由浏览器原生粘贴一次;Alt+V、AltGr+V 不粘贴', t0.pasted);
+  t0.pasted.length = 0;
+  const ctrlV = pressKey(t0, { type: 'keydown', ctrlKey: true, key: 'v' }, 'hello');
   await app2.settle();
-  check(t0.pasted.length === 1 && t0.pasted[0] === 'hello', 'T13 文本剪贴板:按普通粘贴进终端', t0.pasted);
+  check(ctrlV.handled === false && ctrlV.ev.prevented === true && ctrlV.ev.stopped === true, 'T13 Ctrl+V 被应用接管,且阻止了浏览器的默认动作(xterm 6 不会代劳)');
+  check(t0.pasted.length === 1 && t0.pasted[0] === 'hello', 'T13 文本剪贴板:只粘一份(应用粘一次,浏览器没有再原生粘贴一次)', t0.pasted);
   app2.term.pasteReply = { ok: true, type: 'uploaded', paths: ['/tmp/pi-paste-1.png', '/tmp/my file.png'] };
-  t0.keyHandler({ type: 'keydown', altKey: true, key: 'v' });
+  t0.pasted.length = 0;
+  pressKey(t0, { type: 'keydown', ctrlKey: true, key: 'v' }, 'hello');
   await app2.settle();
   const w2 = app2.termCalls.filter((c) => c.api === 'write').pop();
   check(!!w2 && w2.arg.data === "/tmp/pi-paste-1.png '/tmp/my file.png'", 'T13 上传完成:远程路径填入输入行(含空格的加引号)', w2 && w2.arg.data);
-  check(t0.pasted[t0.pasted.length - 1] === "/tmp/pi-paste-1.png '/tmp/my file.png'", 'T13 上传路径经 xterm 的 paste 送入(程序开着括号粘贴模式时会被识别为粘贴,而不是逐字键入)', t0.pasted);
+  check(t0.pasted.length === 1 && t0.pasted[0] === "/tmp/pi-paste-1.png '/tmp/my file.png'", 'T13 上传路径经 xterm 的 paste 送入(程序开着括号粘贴模式时会被识别为粘贴,而不是逐字键入);系统剪贴板里哪怕还有旧文本也不会被原生粘贴带进来', t0.pasted);
   // 返回控制台:会话停止、xterm 释放
   app2.el('termBackBtn')._l.click[0]();
   await app2.settle();
@@ -822,26 +848,53 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   check(appU.openedLinks.length === 0, 'T18 链接:没按修饰键的单击不打开(在链接上双击选词不会误开网页)', appU.openedLinks);
   addonOf(tU, 'web-links').handler({ ctrlKey: true }, 'https://example.com/a?b=1');
   check(appU.openedLinks.length === 1 && appU.openedLinks[0] === 'https://example.com/a?b=1', 'T18 链接:Ctrl+单击 → 交给系统浏览器打开(openExternal),不走 window.open', appU.openedLinks);
+  // OSC 52(远端程序请求写入本机剪贴板):herdr 这类自己接管鼠标的全屏程序,「选中即复制」靠它把文本送回本机。
+  // 终端不处理的话复制会静默失败,剪贴板停在旧内容上,随后 Ctrl+V 送上去的就是旧的那张图
+  const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
+  const osc = tU.parser.osc[52];
+  check(typeof osc === 'function', 'T18 终端登记了 OSC 52 处理器');
+  const oscHandled = osc(`c;${b64('从 herdr 选中的一行\n第二行 😀')}`);
+  await appU.settle();
+  check(oscHandled === true && appU.clipWrites[appU.clipWrites.length - 1] === '从 herdr 选中的一行\n第二行 😀', 'T18 OSC 52 写入:base64 的 UTF-8 文本原样写进系统剪贴板', JSON.stringify(appU.clipWrites));
+  const writesBeforeOsc = appU.clipWrites.length;
+  osc('c;?'); // 读取请求:不应答(服务器上的程序读不走本机剪贴板)
+  osc(`p;${b64('primary selection')}`);
+  osc(`q;${b64('secondary selection')}`);
+  osc('c;!!!!not-base64!!!!');
+  osc(`c;${Buffer.from([0xff, 0xfe, 0xfd]).toString('base64')}`); // 不是合法的 UTF-8
+  osc(`c;${b64('半截').slice(0, 5)}`); // 被截断的 base64
+  osc(`c;${b64('夹带').replace(/=+$/, '')}#`); // 夹带非法字符
+  await appU.settle();
+  check(appU.clipWrites.length === writesBeforeOsc, 'T18 OSC 52 不应答读取请求(?);其它选择区(p / q)与非法负载一律不写剪贴板', JSON.stringify(appU.clipWrites.slice(writesBeforeOsc)));
+  osc('c;');
+  await appU.settle();
+  check(appU.clipWrites[appU.clipWrites.length - 1] === '', 'T18 OSC 52 空负载 = 清空剪贴板(写入空串)', JSON.stringify(appU.clipWrites.slice(-1)));
+  osc(`${b64('不带填充等号')}`.length ? `c;${b64('不带填充等号').replace(/=+$/, '')}` : 'c;');
+  await appU.settle();
+  check(appU.clipWrites[appU.clipWrites.length - 1] === '不带填充等号', 'T18 OSC 52 负载末尾没有填充等号也能正确解码', JSON.stringify(appU.clipWrites.slice(-1)));
   const writesBefore = writesOf(appU).length;
-  check(tU.keyHandler({ type: 'keydown', key: 'Enter', shiftKey: true }) === false, 'T18 Shift+Enter 被映射(不再当作 Enter)');
+  const shiftEnterDown = pressKey(tU, { type: 'keydown', key: 'Enter', shiftKey: true });
+  check(shiftEnterDown.handled === false && shiftEnterDown.ev.prevented === true, 'T18 Shift+Enter 被映射(不再当作 Enter),并阻止了浏览器的默认动作(否则输入框里会被塞进一个换行)');
   await appU.settle();
   const newlineWrite = writesOf(appU).pop();
   check(writesOf(appU).length === writesBefore + 1 && !!newlineWrite && newlineWrite.arg.data === '\x1b\r' && newlineWrite.arg.id === 't-1', 'T18 Shift+Enter 发的是换行序列 Esc+CR', newlineWrite && newlineWrite.arg);
-  check(
-    tU.keyHandler({ type: 'keydown', key: 'Enter' }) === true &&
-      tU.keyHandler({ type: 'keydown', key: 'Enter', shiftKey: true, ctrlKey: true }) === true &&
-      tU.keyHandler({ type: 'keydown', key: 'Enter', shiftKey: true, altKey: true }) === true &&
-      tU.keyHandler({ type: 'keydown', key: 'Enter', shiftKey: true, metaKey: true }) === true &&
-      tU.keyHandler({ type: 'keyup', key: 'Enter', shiftKey: true }) === true,
-    'T18 普通 Enter、带 Ctrl/Alt/Meta 的 Enter、keyup 都不受影响'
-  );
+  const untouched = [
+    pressKey(tU, { type: 'keydown', key: 'Enter' }),
+    pressKey(tU, { type: 'keydown', key: 'Enter', shiftKey: true, ctrlKey: true }),
+    pressKey(tU, { type: 'keydown', key: 'Enter', shiftKey: true, altKey: true }),
+    pressKey(tU, { type: 'keydown', key: 'Enter', shiftKey: true, metaKey: true }),
+    pressKey(tU, { type: 'keyup', key: 'Enter', shiftKey: true }),
+  ];
+  check(untouched.every((k) => k.handled === true && k.ev.prevented === false), 'T18 普通 Enter、带 Ctrl/Alt/Meta 的 Enter、keyup 都不受影响(不拦,也不替浏览器做主)');
   await appU.settle();
   check(writesOf(appU).length === writesBefore + 1, 'T18 上面这些组合不产生额外写入');
-  check(tU.keyHandler({ type: 'keypress', key: 'Enter', shiftKey: true }) === false, 'T18 Shift+Enter 的 keypress 也被拦(否则 xterm 会再发一个 \\r:换了行还把内容提交了)');
-  check(tU.keyHandler({ type: 'keypress', key: 'Enter' }) === true, 'T18 普通 Enter 的 keypress 不受影响');
+  const shiftEnterPress = pressKey(tU, { type: 'keypress', key: 'Enter', shiftKey: true });
+  check(shiftEnterPress.handled === false && shiftEnterPress.ev.prevented === true, 'T18 Shift+Enter 的 keypress 也被拦并阻止(否则 xterm 会再发一个 \\r:换了行还把内容提交了)');
+  const plainEnterPress = pressKey(tU, { type: 'keypress', key: 'Enter' });
+  check(plainEnterPress.handled === true && plainEnterPress.ev.prevented === false, 'T18 普通 Enter 的 keypress 不受影响');
   await appU.settle();
   check(writesOf(appU).length === writesBefore + 1, 'T18 keypress 被拦且不重复发送换行序列');
-  check(appU.el('termHint').textContent === 'Alt+V:粘贴;截图/文件自动上传到 /tmp 并填入路径', 'T18 终端提示只有 Alt+V 一条', appU.el('termHint').textContent);
+  check(appU.el('termHint').textContent === 'Ctrl+V:粘贴;截图/文件自动上传到 /tmp 并填入路径', 'T18 终端提示只有 Ctrl+V 一条', appU.el('termHint').textContent);
   addonOf(tU, 'webgl').lossCb();
   check(addonOf(tU, 'webgl').disposed === true && tU.disposed === false && appU.termCalls.filter((c) => c.api === 'stop').length === 0, 'T18 WebGL 上下文丢失:只卸渲染器,终端实例与会话保留');
 
@@ -952,9 +1005,11 @@ const detectCalls = (app, key) => app.calls.filter(([k, x]) => k === 'detect' &&
   check(appU5.el('termShiftEnterCheck').checked === false && appU5.el('termProxyCheck').checked === false && appU5.el('termTmuxCheck').checked === true, 'T18 设置卡回显三个会话开关');
   appU5.el('termOpenBtn')._l.click[0]();
   await appU5.settle();
-  check(appU5.el('termHint').textContent === 'Alt+V:粘贴;截图/文件自动上传到 /tmp 并填入路径', 'T18 关闭换行映射:提示保持 Alt+V 一条(Shift+Enter 不写进提示)', appU5.el('termHint').textContent);
+  check(appU5.el('termHint').textContent === 'Ctrl+V:粘贴;截图/文件自动上传到 /tmp 并填入路径', 'T18 关闭换行映射:提示保持 Ctrl+V 一条(Shift+Enter 不写进提示)', appU5.el('termHint').textContent);
   const writesU5 = writesOf(appU5).length;
-  check(appU5.terminals[0].keyHandler({ type: 'keydown', key: 'Enter', shiftKey: true }) === true && appU5.terminals[0].keyHandler({ type: 'keypress', key: 'Enter', shiftKey: true }) === true, 'T18 关闭换行映射:Shift+Enter(keydown 与 keypress)交回 xterm 默认处理(等同 Enter)');
+  const offDown = pressKey(appU5.terminals[0], { type: 'keydown', key: 'Enter', shiftKey: true });
+  const offPress = pressKey(appU5.terminals[0], { type: 'keypress', key: 'Enter', shiftKey: true });
+  check(offDown.handled === true && offPress.handled === true && offDown.ev.prevented === false && offPress.ev.prevented === false, 'T18 关闭换行映射:Shift+Enter(keydown 与 keypress)交回 xterm 默认处理(等同 Enter),应用不替浏览器做主');
   await appU5.settle();
   check(writesOf(appU5).length === writesU5, 'T18 关闭换行映射:不写换行序列');
   appU5.el('termProxyCheck').checked = true;

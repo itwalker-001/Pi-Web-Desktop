@@ -2,7 +2,7 @@
 // 前提:本机能用默认私钥免密登录 user@host(默认 bk@172.16.10.131)。
 // 验证内容:
 //   渲染(WebGL,或不可用时的回退)与 Unicode 11 宽度 → 键入回显(渲染层→IPC→PTY→SSH 往返)→
-//   会话环境(COLORTERM、locale 不被动、代理继承 / 关闭)→ Ctrl+V 原样送达(^V)→ Alt+V 文本粘贴 → Alt+V 截图上传(真实 SFTP 写 /tmp)
+//   会话环境(COLORTERM、locale 不被动、代理继承 / 关闭)→ Ctrl+V 文本粘贴 → Alt+V 原样送达(^[v)→ Ctrl+V 截图上传(真实 SFTP 写 /tmp)
 //   → 远端文件核对 → Shift+Enter 换行序列 → 链接 Ctrl+单击 → 视图隐藏再显示后的重排 → 主题切换 →
 //   tmux 会话保活(服务器有 tmux 才跑完整流程;没有则验证如实报 missing)→ 返回回收。
 // 运行:node test/term-runtime.js [user@host]
@@ -87,28 +87,73 @@ function ps(args) {
     });
   });
 }
+// 系统剪贴板不可用时(锁屏、被远程桌面软件占用:Set-Clipboard 报错甚至卡住)的兜底:在主进程里把 clipboard 的读取
+// 换成替身。这样按键 → IPC → 主进程剪贴板三态 → 粘贴 / SFTP 上传这条通路仍被验证;只有走渲染层
+// navigator.clipboard 的 Ctrl+Shift+V 没法用替身,那种情况下明确跳过。clipStub 记录本轮是否用了替身
+let clipStub = false;
+const stubClipboard = (kind, payload) => mainEv(`(() => {
+  globalThis.__clipStub = ${JSON.stringify({ kind, text: kind === 'text' ? payload : '', bytes: kind === 'image' ? [...payload] : [] })};
+  globalThis.__clipStubWrites = globalThis.__clipStubWrites || [];
+  const clipboard = process.mainModule.require('electron').clipboard;
+  clipboard.readText = async () => (globalThis.__clipStub.kind === 'text' ? globalThis.__clipStub.text : '');
+  clipboard.read = async () => (globalThis.__clipStub.kind === 'image'
+    ? [{ types: ['image/png'], getType: async (mime) => new Blob([Uint8Array.from(globalThis.__clipStub.bytes)], { type: mime }) }]
+    : []);
+  // 写入方向(OSC 52)也换成替身并记录:替身模式下真实剪贴板既不读也不写
+  clipboard.writeText = async (text) => { globalThis.__clipStubWrites.push(String(text)); globalThis.__clipStub = { kind: 'text', text: String(text) }; };
+  // 「剪贴板里有没有复制的文件」的替身:真实实现里是 clipboard.has('text/uri-list'),文本 / 图片剪贴板都答没有
+  clipboard.has = async () => false;
+  return true;
+})()`);
+const useClipboardStub = async (kind, payload) => {
+  await stubClipboard(kind, payload);
+  if (!clipStub) console.log('(信息)系统剪贴板不可用(会话锁定或被占用):本轮粘贴与上传改用主进程替身验证,跳过 Ctrl+Shift+V');
+  clipStub = true;
+  return { stubbed: true };
+};
 const setClipboardText = async (t) => {
   let result;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     result = await ps(['-Command', `Set-Clipboard -Value ${JSON.stringify(t).replace(/"/g, "'")}`]);
     if (!result.err) return result;
     await sleep(250);
   }
-  return result;
+  return useClipboardStub('text', t);
 };
 // PowerShell 单引号字符串里反斜杠是字面量,不需转义;路径里有单引号的场景不存在(临时目录)
-const setClipboardImage = () =>
-  ps([
+const setClipboardImage = async () => {
+  if (clipStub) return useClipboardStub('image', PNG);
+  const result = await ps([
     '-STA', '-Command',
     `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing;` +
     `$i=[System.Drawing.Image]::FromFile('${pngFile}');` +
     `[System.Windows.Forms.Clipboard]::SetImage($i); $i.Dispose()`,
   ]);
+  return result.err ? useClipboardStub('image', PNG) : result;
+};
+
+// 本轮测试会往系统剪贴板里写这些东西;收尾时只有剪贴板里仍是这些内容才还原(用户中途复制了别的就不动)
+const OSC_MARK = 'OSC52_ROUNDTRIP_5be2';
+const CLIP_MARKERS = ['PASTE_TEXT_OK_91', 'CSV_PASTE_OK_31', OSC_MARK].join(',');
+// 暂存 / 还原用户当前的剪贴板:测试一跑就把人家的剪贴板冲掉是不好的(2026-11-26 我自己的测试就冲掉过一张截图)
+// 本文件里起的子进程一律 windowsHide:不隐藏的话会弹出控制台窗口,把系统焦点从被测窗口手里抢走
+const clipKeep = (action) => new Promise((resolve) => {
+  execFile('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', path.join(ROOT, 'test', 'helpers', 'clip-keep.ps1'),
+    '-Action', action, '-Dir', path.join(USER_DATA, 'clip'), '-Marker', CLIP_MARKERS], { windowsHide: true, timeout: 20000 }, (err, stdout, stderr) => {
+    resolve({ err: err && String(err.message), stdout: String(stdout || '').trim(), stderr: String(stderr || '').slice(0, 160) });
+  });
+});
+// 读系统剪贴板的文本(只用于和测试标记比较,不打印内容)
+const getClipboardText = () => new Promise((resolve) => {
+  execFile('powershell.exe', ['-NoProfile', '-STA', '-Command', 'Add-Type -AssemblyName System.Windows.Forms; if ([System.Windows.Forms.Clipboard]::ContainsText()) { [Console]::Out.Write([System.Windows.Forms.Clipboard]::GetText()) }'], { windowsHide: true, timeout: 15000 }, (err, stdout) => {
+    resolve({ err: err && String(err.message), text: String(stdout || '') });
+  });
+});
 
 function ssh(cmd) {
   if (OFFLINE) throw new Error('离线检查禁止 SSH');
   return new Promise((resolve) => {
-    execFile('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', `${sshUser}@${sshHost}`, cmd], { timeout: 20000 }, (err, stdout, stderr) => {
+    execFile('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', `${sshUser}@${sshHost}`, cmd], { windowsHide: true, timeout: 20000 }, (err, stdout, stderr) => {
       resolve({ code: err ? 1 : 0, stdout: String(stdout || ''), stderr: String(stderr || '') });
     });
   });
@@ -269,6 +314,9 @@ async function main() {
   );
   // No pre-run remote deletion: every run owns a fresh socket and marker.
   let tmuxOnServer = '';
+  // 先暂存用户当前的剪贴板:下面的粘贴 / 上传 / OSC 52 步骤都会往里写测试内容,收尾时还原
+  const savedClip = await clipKeep('save');
+  console.log(`(信息)暂存当前剪贴板(测完还原):${savedClip.err ? '失败,' + savedClip.err.slice(0, 120) : savedClip.stdout}`);
 
   // 主进程开一个调试口(仅测试用):把 shell.openExternal 换成记录器,这样能验证「链接确实交给了系统浏览器」,
   // 又不会真弹出浏览器。页面里的 piApi 是 contextBridge 暴露的对象,不允许替换,只能在这一层拦
@@ -422,36 +470,76 @@ async function main() {
   const nodePath = `/${outputLine(await run('command -v node', 'node 路径', 8000), '/')}`;
   check(/\/bin\/node$/.test(nodePath), '登录 shell 的 PATH 里有 node(nvm 等 profile 已生效)', nodePath);
 
-  /* 5) Alt+V 智能粘贴文本(Ctrl+V 原样送达在 raw 段一并验证) */
+  /* 5) Ctrl+V 智能粘贴文本(Alt+V 原样送达在 raw 段一并验证) */
+  // 浏览器派发到 xterm 输入框的原生 paste 事件数 / 输入框的 input 事件数。应用接管的按键不该再走到浏览器的
+  // 默认动作:xterm 6 不会替自定义按键处理器 preventDefault,2026-11-26 实测 Ctrl+V 被应用接管后浏览器照样派发
+  // 原生 paste(立刻粘一遍系统剪贴板里的文本),两三秒后智能粘贴再粘一遍 —— 同一段文本出现两次
+  const armInputCounters = () => ev(`(() => {
+    const ta = termState.term.element.querySelector('textarea');
+    if (!window.__termInputCounters || window.__termInputCountersTa !== ta) {
+      window.__termInputCounters = { paste: 0, input: 0 };
+      window.__termInputCountersTa = ta;
+      ta.addEventListener('paste', () => { window.__termInputCounters.paste += 1; }, true);
+      ta.addEventListener('input', () => { window.__termInputCounters.input += 1; }, true);
+    }
+    return true;
+  })()`);
+  const inputCounters = () => ev('({ ...window.__termInputCounters })');
+  await armInputCounters();
   const clipboardReady = await setClipboardText('PASTE_TEXT_OK_91');
   if (clipboardReady.err) throw new Error(`无法准备测试剪贴板:${clipboardReady.err}`);
   await sleep(400);
   await ev('termState.term.focus()');
-  await pressAlt('v', 'KeyV');
+  const pasteBefore = await inputCounters();
+  const pasteT0 = Date.now();
+  await pressCtrl('v', 'KeyV');
   await withTimeout(waitTermText(/PASTE_TEXT_OK_91/, '文本粘贴回显'), 15000, '文本粘贴回显');
-  check(true, 'Alt+V 文本:粘贴进输入行');
+  const pasteMs = Date.now() - pasteT0;
+  console.log(`(信息)Ctrl+V 文本:从按键到出现在输入行 ${pasteMs}ms`);
+  check(true, `Ctrl+V 文本:粘贴进输入行${clipStub ? '(剪贴板为主进程替身)' : ''}`);
+  // 纯文本粘贴不该等文件列表检查(那要起一次 PowerShell,实测 2 秒多):主进程先用 clipboard.has 判定没有文件就直接粘贴
+  check(pasteMs < 1500, 'Ctrl+V 文本:不等文件列表检查就粘贴(从按键到出现在输入行 < 1.5 秒)', `${pasteMs}ms`);
+  const pasteAfter = await inputCounters();
+  check(pasteAfter.paste === pasteBefore.paste && pasteAfter.input === pasteBefore.input, 'Ctrl+V 由应用接管:浏览器没有再派发原生 paste(否则同一段文本会粘两份)', JSON.stringify({ 前: pasteBefore, 后: pasteAfter }));
   await pressCtrl('c', 'KeyC'); // 清掉输入行(不执行这段文本)
 
-  // Ctrl+Shift+V(README 里写的另一条纯文本粘贴):确认在 Electron 里真能取到剪贴板并送进终端
-  await setClipboardText('CSV_PASTE_OK_31');
-  await sleep(400);
-  await key({ type: 'rawKeyDown', modifiers: 10, key: 'v', code: 'KeyV', windowsVirtualKeyCode: 86 })
-    .then(() => key({ type: 'keyUp', modifiers: 10, key: 'v', code: 'KeyV', windowsVirtualKeyCode: 86 }));
-  await sleep(1500);
-  const csvText = await termText();
-  check(/CSV_PASTE_OK_31/.test(csvText), 'Ctrl+Shift+V:文本粘贴进输入行(必须真能取到剪贴板,不能让 README 说不存在的快捷键)', csvText.slice(-160));
-  await pressCtrl('c', 'KeyC');
+  // Ctrl+Shift+V(README 里写的另一条纯文本粘贴):确认在 Electron 里真能取到剪贴板并送进终端。
+  // 它走渲染层的 navigator.clipboard,替身管不到:系统剪贴板不可用时如实跳过
+  if (clipStub) {
+    console.log('(信息)跳过 Ctrl+Shift+V:它读的是渲染层的系统剪贴板,本轮剪贴板不可用');
+  } else {
+    await setClipboardText('CSV_PASTE_OK_31');
+    if (clipStub) {
+      console.log('(信息)跳过 Ctrl+Shift+V:准备剪贴板时系统剪贴板变得不可用');
+    } else {
+      await sleep(400);
+      const csvBefore = await inputCounters();
+      await key({ type: 'rawKeyDown', modifiers: 10, key: 'v', code: 'KeyV', windowsVirtualKeyCode: 86 })
+        .then(() => key({ type: 'keyUp', modifiers: 10, key: 'v', code: 'KeyV', windowsVirtualKeyCode: 86 }));
+      await sleep(1500);
+      const csvText = await termText();
+      check(/CSV_PASTE_OK_31/.test(csvText), 'Ctrl+Shift+V:文本粘贴进输入行(必须真能取到剪贴板,不能让 README 说不存在的快捷键)', csvText.slice(-160));
+      const csvAfter = await inputCounters();
+      // 只数 paste 事件:xterm 处理原生粘贴时不阻止默认动作,浏览器会把文本插进输入框(所以 input 事件会多一次,属正常)
+      check(csvAfter.paste === csvBefore.paste + 1, 'Ctrl+Shift+V 走的是浏览器原生粘贴:恰好一次(应用不拦,也不重复)', JSON.stringify({ 前: csvBefore, 后: csvAfter }));
+      await pressCtrl('c', 'KeyC');
+    }
+  }
 
-  /* 6) Alt+V 截图上传:真实剪贴板位图 → SFTP → /tmp,路径填入输入行 */
+  /* 6) Ctrl+V 截图上传:真实剪贴板位图 → SFTP → /tmp,路径填入输入行 */
   await setClipboardImage();
   await sleep(400);
-  await pressAlt('v', 'KeyV');
+  await armInputCounters();
+  const shotBefore = await inputCounters();
+  await pressCtrl('v', 'KeyV');
   const up = await withTimeout(waitTermText(/\/tmp\/pi-paste-/, '上传路径填入输入行'), 30000, '上传路径填入输入行');
+  const shotAfter = await inputCounters();
+  check(shotAfter.paste === shotBefore.paste && shotAfter.input === shotBefore.input, 'Ctrl+V 截图:同样没有浏览器原生粘贴(剪贴板里是图,原生粘贴只会送出一个空的括号粘贴)', JSON.stringify({ 前: shotBefore, 后: shotAfter }));
   const returnedPaths = await mainEv('globalThis.__termRuntimeIsolation.uploads.slice()');
   for (const remotePath of returnedPaths) uploadDirs.add(uploadDir(remotePath));
   const uploaded = returnedPaths.find((p) => p.endsWith('.png') && up.includes(p));
   const m = uploaded ? [uploaded] : null;
-  check(!!m, 'Alt+V 截图:上传后路径填入输入行', up.slice(-120));
+  check(!!m, 'Ctrl+V 截图:上传后路径填入输入行', up.slice(-120));
   // 远端核对:文件存在、是 PNG(剪贴板往返会再编码,字节数与本地原件不同是正常的)
   if (m) {
     const ls = await ssh(`s=$(stat -c %s ${shellQuote(m[0])} 2>/dev/null); h=$(od -An -tx1 -N4 ${shellQuote(m[0])} 2>/dev/null | tr -d ' \\n'); echo "$s $h"`);
@@ -462,32 +550,69 @@ async function main() {
   await pressCtrl('c', 'KeyC');
   await sleep(600);
 
+  /* 6b) OSC 52:远端程序请求写入本机剪贴板(herdr 这类自己接管鼠标的全屏程序,「选中即复制」靠它)。随后 Ctrl+V
+        粘贴回来的应当正是这段文本 —— 终端若丢掉 OSC 52,剪贴板会停在旧内容上(比如上一步那张图),
+        表现就是「在 herdr 里复制了文本,按 Ctrl+V 却一直上传旧截图」 */
+  // 标记在命令里拆开写:命令行回显里不能出现完整的标记,否则下面「等粘贴内容出现」会被回显直接命中,
+  // 粘贴还没真正到就往下走了(真实剪贴板的读取有一两秒延迟),后面的步骤全被串行(2026-11-26 踩过)
+  const [markHead, markTail] = [OSC_MARK.slice(0, 8), OSC_MARK.slice(8)];
+  await run(`printf '\\033]52;c;%s\\a' "$(printf '%s%s' '${markHead}' '${markTail}' | base64)"`, '远端发出 OSC 52');
+  await sleep(900);
+  const oscSeen = clipStub ? (await mainEv('globalThis.__clipStubWrites.slice(-1)[0] || ""')) : (await getClipboardText()).text;
+  check(oscSeen === OSC_MARK, `OSC 52 写入本机剪贴板${clipStub ? '(剪贴板为主进程替身)' : ''}`, oscSeen === OSC_MARK ? OSC_MARK : `得到的是另外 ${oscSeen.length} 个字符的内容`);
+  await ev('termState.term.focus()');
+  const oscBefore = await inputCounters();
+  const oscT0 = Date.now();
+  await pressCtrl('v', 'KeyV');
+  // 只认「提示符后面紧跟标记」的那一行 —— 那才是粘贴进输入行的内容
+  await withTimeout(waitTermText(new RegExp(`\\$ ${OSC_MARK}`), 'OSC 52 内容经 Ctrl+V 粘贴回终端'), 20000, 'OSC 52 内容经 Ctrl+V 粘贴回终端');
+  const oscMs = Date.now() - oscT0;
+  check(true, `Ctrl+V:粘贴的正是 OSC 52 刚写入的文本(不再上传上一步那张图;从按键到出现 ${oscMs}ms)`);
+  check(oscMs < 1500, 'Ctrl+V(远端刚写入的文本):同样不等文件列表检查', `${oscMs}ms`);
+  const oscAfter = await inputCounters();
+  check(oscAfter.paste === oscBefore.paste && oscAfter.input === oscBefore.input, 'Ctrl+V(剪贴板是远端刚写入的文本):浏览器同样没有派发原生 paste', JSON.stringify({ 前: oscBefore, 后: oscAfter }));
+  await pressCtrl('c', 'KeyC');
+  await sleep(800);
+  // 读取请求(负载为 ?)不应答:一旦应答,本机剪贴板内容的 base64 会被当作键入送到远端、出现在屏幕上
+  const markB64 = Buffer.from(OSC_MARK, 'utf8').toString('base64').slice(0, 20);
+  await run(`printf '\\033]52;c;?\\a'`, '远端发出 OSC 52 读取请求');
+  await sleep(900);
+  const afterQuery = await termText();
+  check(!afterQuery.includes(markB64), 'OSC 52 读取请求(?):不应答,本机剪贴板内容没有被回传到远端', markB64);
+  // 清行之后输入行必须还是空的:漏掉 preventDefault 时,原生粘贴先到、被 Ctrl+C 清掉,智能粘贴两三秒后才到,
+  // 这份迟到的文本就留在输入行上,后面键入的命令会被接在它后面(2026-11-26 就这样把 stty 吞成了一条不存在的命令)
+  check(/\$ ?$/.test(afterQuery.trimEnd()), 'Ctrl+C 清行之后没有迟到的第二份粘贴(输入行是空的)', afterQuery.trimEnd().slice(-80));
+
   /* 7) Shift+Enter:发的是换行序列(Esc+CR),普通 Enter 仍是 CR。用 cat -v 把收到的字节按记号法回显
         (raw 模式下没有信号、不缓冲;timeout 到点自动结束并恢复终端) */
-  // withCtrlV:顺带验证 Ctrl+V 原样送达;tmux 段不需要,关掉少一次输入
-  const rawEcho = async (seconds, withCtrlV = true) => {
+  // withAltV:顺带验证 Alt+V 原样送达(xterm 默认发 Esc+v,应用不拦截);tmux 段不需要,关掉少一次输入
+  const rawEcho = async (seconds, withAltV = true) => {
     await typeText(`stty raw -echo; timeout ${seconds} cat -v; stty sane`);
     await pressEnter();
     await sleep(1500);
+    const inputBefore = await inputCounters();
     await pressShiftEnter();
     await sleep(400);
     await pressEnter();
     await sleep(1200);
+    const inputAfter = await inputCounters();
     const before = await termText();
-    if (withCtrlV) {
-      await pressCtrl('v', 'KeyV');
+    if (withAltV) {
+      await pressAlt('v', 'KeyV');
       await sleep(400);
       await pressEnter();
       await sleep(1200);
     }
     const after = await termText();
     await sleep(seconds * 1000); // 等 timeout 到点、终端恢复,再继续后面的步骤
-    return { before, after };
+    return { before, after, inputDelta: inputAfter.input - inputBefore.input };
   };
   const rawOut = await rawEcho(8);
   const caretOut = (rawOut.before.match(/\^\[[\^A-Z]{0,3}[\^A-Z]{0,3}/g) || []).join(' ');
   check(caretOut.replace(/\s+$/, '') === '^[^M^M', 'Shift+Enter 发出 Esc+CR,Enter 发出 CR(远端 cat -v 回显 ^[^M 后跟 ^M)', caretOut);
-  check(/\^V\^M/.test(rawOut.after.slice(-400)), 'Ctrl+V 原样送到远端(cat -v 回显 ^V),不再被应用当作粘贴拦截', rawOut.after.slice(-160));
+  // 应用接管 Shift+Enter 后同样要阻止默认动作:否则浏览器会往 xterm 的输入框里塞一个换行(input 事件)
+  check(rawOut.inputDelta === 0, 'Shift+Enter 由应用接管:浏览器没有往输入框里塞换行', String(rawOut.inputDelta));
+  check(/\^\[v\^M/.test(rawOut.after.slice(-400)), 'Alt+V 原样送到远端(cat -v 回显 ^[v),不被应用当作粘贴拦截', rawOut.after.slice(-160));
 
   /* 8) 链接:悬停识别;直接单击 / 双击选词不打开;Ctrl+单击交给系统浏览器 */
   const LINK = 'https://example.com/pi-web-desktop';
@@ -743,6 +868,11 @@ async function checkIsolationOffline() {
       spawn('taskkill', ['/PID', String(app.pid), '/T', '/F'], { stdio: 'ignore' });
     }
     await sleep(800);
+    // 还原先前暂存的剪贴板(只有里面仍是本轮测试内容时才还原;中途没暂存成功就什么都不做)
+    if (!OFFLINE) {
+      const restored = await clipKeep('restore');
+      console.log(`(信息)还原剪贴板:${restored.err ? '失败,' + restored.err.slice(0, 120) : restored.stdout}`);
+    }
     try { fs.rmSync(USER_DATA, { recursive: true, force: true }); } catch {}
     process.exit(failed ? 1 : 0);
   });

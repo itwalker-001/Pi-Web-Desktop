@@ -128,8 +128,9 @@ class FakeClient extends EventEmitter {
 const handlers = {};
 const sent = []; // 主窗口收到的事件 { channel, payload }
 const fakeWin = { isDestroyed: () => false, webContents: { send: (channel, payload) => sent.push({ channel, payload }) } };
-const clipState = { image: null, text: '' }; // image: null 或 { mime, bytes }
+const clipState = { image: null, text: '', writes: [], writeFail: false, hasFiles: false, hasThrows: false, hasCalls: [] }; // image: null 或 { mime, bytes };writes 记录经 clipboard:write 写入的文本;hasFiles:类型表里有没有 text/uri-list(= 剪贴板里有复制的文件)
 const fileClipboard = []; // 「复制的文件」路径列表
+let fileQueries = 0; // 查文件列表(真实实现里是起一次 PowerShell)的次数
 const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]); // 假 PNG 头
 
 const origLoad = Module._load;
@@ -146,14 +147,28 @@ Module._load = function (request, ...args) {
             ? [{ types: [clipState.image.mime], getType: async (t) => new Blob([clipState.image.bytes], { type: t }) }]
             : [],
         readText: async () => clipState.text,
-        writeText: async () => {},
+        has: async (mime) => {
+          clipState.hasCalls.push(mime);
+          if (clipState.hasThrows) throw new Error('所请求的剪贴板操作失败');
+          return mime === 'text/uri-list' && clipState.hasFiles;
+        },
+        writeText: async (t) => {
+          if (clipState.writeFail) throw new Error('打开剪贴板失败');
+          clipState.writes.push(String(t));
+          clipState.text = String(t);
+        },
       },
       app: { getPath: () => tmp },
     };
   }
   if (request === 'ssh2' && args[0] && path.resolve(args[0].filename || '') === REMOTE_PATH) return { Client: FakeClient };
   if (request === './webview-files' && args[0] && path.resolve(args[0].filename || '') === IPC_PATH) {
-    return { readClipboardFilePaths: async () => fileClipboard.slice() };
+    return {
+      readClipboardFilePaths: async () => {
+        fileQueries += 1;
+        return fileClipboard.slice();
+      },
+    };
   }
   return origLoad.apply(this, [request, ...args]);
 };
@@ -228,6 +243,7 @@ const exitEvents = () => sent.filter((s) => s.channel === 'term:exit');
   assert(term.stopAll() === undefined, 'stopAll 不抛错');
 
   /* ---------- term:paste 剪贴板三态 ---------- */
+  const WIN = process.platform === 'win32'; // 「有文本且没有文件就不查文件列表」的快路径只在 Windows 上开
   clipState.image = { mime: 'image/png', bytes: pngBytes };
   fileClipboard.length = 0;
   clipState.text = 'leftover text';
@@ -236,8 +252,10 @@ const exitEvents = () => sent.filter((s) => s.channel === 'term:exit');
   assert(/^\/tmp\/pi-paste-[a-f0-9-]+\/pi-paste-\d{8}-\d{6}-\d{3}\.png$/.test(r.paths[0]), '截图按时间戳命名进 /tmp 下的独立目录', r.paths && r.paths[0]);
   assert(sftpCurrent.writes.length === 1 && sftpCurrent.writes[0].remote === r.paths[0] && sftpCurrent.writes[0].buffer.equals(pngBytes), '截图 PNG 字节经 SFTP 写到该路径', sftpCurrent.writes.map((w) => w.remote));
 
+  // 剪贴板同时带着(上一步遗留的)文本:复制的文件仍优先于文本
   clipState.image = null;
   fileClipboard.push('C:\\Users\\x\\my file.png', 'D:\\data\\a.txt');
+  clipState.hasFiles = true; // 与真实剪贴板一致:有 CF_HDROP 时类型表里就有 text/uri-list
   sftpCurrent = makeSftp();
   r = await handlers['term:paste']({}, { target: { mode: 'remote', remoteId: 'A' } });
   assert(r.ok === true && r.type === 'uploaded' && r.paths.length === 2, '剪贴板是复制的文件:逐个上传', r);
@@ -260,13 +278,58 @@ const exitEvents = () => sent.filter((s) => s.channel === 'term:exit');
   assert(mkdirFailed && sftpCurrent.writes.length === writeCount, '独立目录创建失败时拒绝写入');
   sftpCurrent = makeSftp();
 
+  // 纯文本:类型表说没有文件 → 直接按文本返回,不去查文件列表(查一次要起 PowerShell、两秒多,粘贴不该等它)
   fileClipboard.length = 0;
   clipState.text = 'plain text';
+  clipState.hasFiles = false;
+  clipState.hasThrows = false;
+  clipState.hasCalls.length = 0;
+  const queriesBefore = fileQueries;
   r = await handlers['term:paste']({}, { target: { mode: 'remote', remoteId: 'A' } });
   assert(r.ok === true && r.type === 'text' && r.text === 'plain text', '剪贴板是文本:按普通粘贴返回', r);
+  if (WIN) {
+    assert(clipState.hasCalls.length === 1 && clipState.hasCalls[0] === 'text/uri-list', 'Windows:用 clipboard.has(text/uri-list) 在进程内判断有没有文件', clipState.hasCalls);
+    assert(fileQueries === queriesBefore, 'Windows:文本且没有文件 → 不查文件列表(不为此起 PowerShell)', { 之前: queriesBefore, 之后: fileQueries });
+  }
+
+  // 问不出来(剪贴板被别的程序占着):按「可能有文件」处理,照旧查文件列表
+  clipState.hasThrows = true;
+  fileClipboard.push('E:\\copy\\notes.md');
+  sftpCurrent = makeSftp();
+  r = await handlers['term:paste']({}, { target: { mode: 'remote', remoteId: 'A' } });
+  assert(r.ok === true && r.type === 'uploaded' && r.paths.length === 1, 'clipboard.has() 报错:退回查文件列表,文件照常上传', r);
+
+  // 剪贴板里没有文本:即使类型表说没有文件也照查(不能凭一张空的类型表断定没有文件)
+  clipState.hasThrows = false;
+  clipState.hasFiles = false;
+  clipState.text = '';
+  fileClipboard.length = 0;
+  fileClipboard.push('F:\\pics\\shot.png');
+  sftpCurrent = makeSftp();
+  r = await handlers['term:paste']({}, { target: { mode: 'remote', remoteId: 'A' } });
+  assert(r.ok === true && r.type === 'uploaded' && r.paths.length === 1 && path.posix.basename(r.paths[0]) === 'shot.png', '没有文本:仍查文件列表,复制的是文件就上传', r);
+
+  fileClipboard.length = 0;
+  r = await handlers['term:paste']({}, { target: { mode: 'remote', remoteId: 'A' } });
+  assert(r.ok === true && r.type === 'text' && r.text === '', '什么都没有(既无图片、文件,也无文本):返回空文本,不报错', r);
 
   r = await handlers['term:paste']({}, { target: { mode: 'local' } });
   assert(r.ok === false && /仅远程/.test(r.error), '本机目标不能上传', r);
+
+  /* ---------- OSC 52:终端里远端程序请求写入本机剪贴板(clipboard:write) ---------- */
+  clipState.writes.length = 0;
+  r = await handlers['clipboard:write']({}, '从 herdr 选中的一行');
+  assert(r.ok === true && clipState.writes.join('|') === '从 herdr 选中的一行', 'OSC 52 写入:文本原样写进系统剪贴板', r);
+  r = await handlers['clipboard:write']({}, '');
+  assert(r.ok === true && clipState.writes.length === 2 && clipState.writes[1] === '', 'OSC 52 空负载:写入空串(= 清空剪贴板),空串本身是合法内容', r);
+  r = await handlers['clipboard:write']({}, 123);
+  assert(r.ok === false && clipState.writes.length === 2, 'clipboard:write 拒绝非字符串', r);
+  r = await handlers['clipboard:write']({}, 'x'.repeat(4 * 1024 * 1024 + 1));
+  assert(r.ok === false && clipState.writes.length === 2, 'clipboard:write 拒绝超过 4MB 的内容', r);
+  clipState.writeFail = true;
+  r = await handlers['clipboard:write']({}, '写不进去');
+  clipState.writeFail = false;
+  assert(r.ok === false && /打开剪贴板失败/.test(r.error) && clipState.writes.length === 2, 'clipboard:write 写入失败(剪贴板被占用):如实返回原因', r);
 
   /* ---------- 会话启动:launchScript 文本 / 代理继承 / tmux 保活 ---------- */
   // launchScript:整段脚本经单引号包裹送达远端,末尾以登录 shell 收尾

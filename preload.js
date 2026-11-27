@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('piApi', {
   csConfirmForceStop: (arg) => ipcRenderer.invoke('code-server:confirmForceStop', arg),
   csOpen: (target) => ipcRenderer.invoke('code-server:open', target),
   copyText: (text) => ipcRenderer.invoke('shell:copy', text),
+  setClipboardText: (text) => ipcRenderer.invoke('clipboard:write', text),
   termStart: (arg) => ipcRenderer.invoke('term:start', arg),
   termWrite: (arg) => ipcRenderer.invoke('term:write', arg),
   termResize: (arg) => ipcRenderer.invoke('term:resize', arg),
